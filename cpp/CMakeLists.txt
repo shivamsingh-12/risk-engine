@@ -57,7 +57,7 @@ if(QRE_ENABLE_WARNINGS)
 endif()
 
 #sanitizer section
-cmake -B build-asan -DQRE_ENABLE_SANITIZERS=ON -DCMAKE_BUILD_TYPE=Debug
+#cmake -B build-asan -DQRE_ENABLE_SANITIZERS=ON -DCMAKE_BUILD_TYPE=Debug
 if(QRE_ENABLE_SANITIZERS)
   target_compile_options(qre PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
   target_link_options(qre PUBLIC -fsanitize=address,undefined)
