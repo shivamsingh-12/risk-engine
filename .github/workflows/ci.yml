@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+  steps:
+  - name: Checkout repo
+    uses: actions/checkout@v4
+  - name: Install dependencies
+    run: |
+      sudo apt-get update
+      sudo apt-get install -y cmake g++ 13 libeigen3-dev
+  - name: Configure
+    run: >
+      cmake -B build -S cpp
+      -DCMAKE_CXX_COMPILER=g++-13
+      -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      -DQRE_BUILD_TESTS=ON 
+      -DQRE_BUILD_BENCHMARKS=OFF
+  - name: Build
+    run: cmake -- build build --parallel
+  - name: Test
+  run: ctest --test-dir build --output-on-failure
