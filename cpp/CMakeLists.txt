@@ -11,7 +11,7 @@ endif()
 
 #can change from terminal in case
 option(QRE_BUILD_TESTS "Build GoogleTest test suite" ON)
-option(QRE_BUILD_BENCHMARKS "Build Google Benchmark suite" ON)
+option(QRE_BUILD_BENCHMARKS "Build Google Benchmark suite" OFF)
 option(QRE_ENABLE_WARNINGS "Enable strict warnings" ON)
 option(QRE_ENABLE_SANITIZERS "Enable ASan/UBSan (debug builds)" OFF)
 
