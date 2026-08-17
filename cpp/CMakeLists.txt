@@ -13,6 +13,7 @@ endif()
 option(QRE_BUILD_TESTS "Build GoogleTest test suite" ON)
 option(QRE_BUILD_BENCHMARKS "Build Google Benchmark suite" OFF)
 option(QRE_ENABLE_WARNINGS "Enable strict warnings" ON)
+option(QRE_BUILD_EXPERIMENTS "Build standalone experiment executables" ON)
 option(QRE_ENABLE_SANITIZERS "Enable ASan/UBSan (debug builds)" OFF)
 
 #system installed eigen is best else fall back to FetchContent
@@ -71,4 +72,7 @@ endif()
  
 if(QRE_BUILD_BENCHMARKS)
   add_subdirectory(benchmarks)
+endif()
+if(QRE_BUILD_EXPERIMENTS)
+  add_subdirectory(experiments)
 endif()

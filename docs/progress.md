@@ -17,6 +17,8 @@ August 16 - Learned how to implement pdf and cdf
             Complete internal helper to avoid confusion of negative sigma
             Using accumulate instead of a manual for loop is cleaner and less error-prone
 August 17 - Finished intial phase of setting up, need to test
+            Writing convergence test in C++ -> geometric loop for N, set values for mu and sigma,
+            write to CSV, track larger values = lower error
             Want to write in Python - what changes?
                 -> Use numpy RNG
                 -> Writing to CSV will be different, see how to implement
