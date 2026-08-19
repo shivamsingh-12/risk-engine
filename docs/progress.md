@@ -24,3 +24,6 @@ August 17 - Finished intial phase of setting up, need to test
                 -> Writing to CSV will be different, see how to implement
                 -> Do formulas/math transfer?
                 -> Consistent geometric loop for N
+August 18 - Calc and Linear Algebra notes -> learned and implemented examples of Hessian, Jacobian,
+            Cholesky, etc.
+August 19 - Implement covariance matrix in covariance.hpp
