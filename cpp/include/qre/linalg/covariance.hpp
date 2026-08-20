@@ -4,7 +4,7 @@
 #include "qre/core/exceptions.hpp"
 //Calculates sample covariance using Eigen library
 namespace qre::linalg{
-    inline CovarianceMatrix sample_covariance(const ReturnMatrix& returns){
+    inline CovarianceMatrix sample_cov(const ReturnMatrix& returns){
         //Basic validation checks to make sure it fits, 2 rows -> time steps, 1 column -> asset
         if(returns.rows() < 2){
             throw InvalidInputError("need at least 2 observations");

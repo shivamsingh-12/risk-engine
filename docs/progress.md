@@ -27,3 +27,7 @@ August 17 - Finished intial phase of setting up, need to test
 August 18 - Calc and Linear Algebra notes -> learned and implemented examples of Hessian, Jacobian,
             Cholesky, etc.
 August 19 - Implement covariance matrix in covariance.hpp
+            Also implemented cholesky decomp in C++ after ensuring requirements are met and handling with Eigen library
+            Cross language reference for implementation - stick with C++ and Python
+            C++ -> use real headers and build correlation matrix by hand, fill Eigen::MatrixXd columns with normal::sample(), transpose to match ReturnMatrix convention, return N, T, N/T ratio, write everything to CSV like last experiment for comparision
+            Python -> Use numpy's cholesky, transpose, calculate eigenvalues using eigvalsh, then condition number, write everything to CSV
