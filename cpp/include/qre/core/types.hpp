@@ -10,4 +10,5 @@ namespace qre{
     using CovarianceMatrix = Eigen::MatrixXd;
     using CorrelationMatrix = Eigen::MatrixXd;
     using WeightVector = Eigen::VectorXd;
+    using PriceMatrix = Eigen::MatrixXd;
 }
