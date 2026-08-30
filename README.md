@@ -14,8 +14,8 @@ A short roadmap is listed below:
 | 0 | Foundation \+ repository | Done |
 | 1 | Probability \+ randomness | Done |
 | 2 | Calculus \+ linear algebra | Done |
-| 3 | Statistics \+ financial data | In Progress |
-| 4 | Numerical methods \+ optimization | Not started |
+| 3 | Statistics \+ financial data | Done |
+| 4 | Numerical methods \+ optimization | In progress |
 | 5 | Financial math \+ derivatives (Black-Scholes) | Not started |
 | 6 | Monte Carlo | Not started |
 | 7 | Portfolio simulation \+ risk (VaR/ES) | Not started |
