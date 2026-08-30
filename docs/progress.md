@@ -33,3 +33,6 @@ August 19 - Implement covariance matrix in covariance.hpp
             Python -> Use numpy's cholesky, transpose, calculate eigenvalues using eigvalsh, then condition number, write everything to CSV
 August 20 - Finished actual implementation of both files
             Self review: Hard part was certainly Python, C++ is a language I am a lot more familiar with and the use of the Eigen library makes things so much more convienient and easy to understand and implement. Math logic is by FAR the hardest thing to understand, I needed a lot of Khan academy and youtube, Python initally was hard but is starting to feel more like pseudocode and becomes a lot easier when I can Google and see that the vast majority of math can be left to numpy, solidifying the cross language references. CSV output feels like a reward, debugging hasn't been an issue so far, but do expect it to be a problem in the future as the math gets harder and I delve further into uncharted waters.
+August 30 - Implemented Phase 3's planned core files - cleaning, returns, and rolling, build 
+            an experiment to test the chain. 
+            Past week - Self tested C++ command, felt pointless to design/write a parser, skipped cross language reference for this phase and wrote in just Python
