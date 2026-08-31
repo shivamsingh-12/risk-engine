@@ -1,0 +1,10 @@
+function_name,solver,converged,iterations,failure_reason
+x^2-4,newton,false,0,DerivativeNearZero
+x^2-4,bisection,true,29,None
+x^2-4,brent,true,7,None
+cbrt(x),newton,false,33,Diverged
+cbrt(x),bisection,true,1,None
+cbrt(x),brent,true,1,None
+cos(x)-x,newton,false,2,MaxIterations
+cos(x)-x,bisection,true,24,None
+cos(x)-x,brent,true,4,None
