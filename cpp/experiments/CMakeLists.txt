@@ -25,4 +25,22 @@ target_link_libraries(implied_vol_solvers
         qre
 )
 
+add_executable(mc_convergence
+    01-mc-convergence/mc_convergence.cpp
+)
+
+target_link_libraries(mc_convergence
+    PRIVATE
+        qre
+)
+
+add_executable(mc_vs_bs
+    03-bs-vs-mc/mc_vs_bs.cpp
+)
+
+target_link_libraries(mc_vs_bs
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment

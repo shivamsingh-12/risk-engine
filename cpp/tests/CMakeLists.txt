@@ -12,6 +12,7 @@ FetchContent_MakeAvailable(googletest)
 #only test files with content so far; add the rest as their phases get tests
 add_executable(qre_tests
     test_black_scholes.cpp
+    test_gbm_path.cpp
 )
 target_link_libraries(qre_tests PRIVATE qre GTest::gtest_main)
 
