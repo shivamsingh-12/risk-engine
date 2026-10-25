@@ -16,4 +16,13 @@ target_link_libraries(cov_stability
         qre
 )
 
+add_executable(implied_vol_solvers
+    04-greeks/implied_vol_solvers.cpp
+)
+
+target_link_libraries(implied_vol_solvers
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
