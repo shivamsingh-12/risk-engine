@@ -43,4 +43,13 @@ target_link_libraries(mc_vs_bs
         qre
 )
 
+add_executable(var_es_methods
+    05-var-es/var_es_methods.cpp
+)
+
+target_link_libraries(var_es_methods
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
