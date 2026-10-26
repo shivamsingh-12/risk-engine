@@ -16,9 +16,9 @@ A short roadmap is listed below:
 | 2 | Calculus \+ linear algebra | Done |
 | 3 | Statistics \+ financial data | Done |
 | 4 | Numerical methods \+ optimization | Done |
-| 5 | Financial math \+ derivatives (Black-Scholes) | In Progress|
-| 6 | Monte Carlo | Not started |
-| 7 | Portfolio simulation \+ risk (VaR/ES) | Not started |
+| 5 | Financial math \+ derivatives (Black-Scholes) | Done |
+| 6 | Monte Carlo | Done |
+| 7 | Portfolio simulation \+ risk (VaR/ES) | Done |
 | 8 | Stochastic processes \+ GBM | Not started |
 | 9 | Stochastic volatility \+ Heston | Not started |
 | 10 | High-dimensional risk \+ RMT | Not started |
