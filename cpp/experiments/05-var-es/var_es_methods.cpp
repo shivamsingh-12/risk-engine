@@ -2,55 +2,39 @@
 //Runs the whole Phase 7 pipeline on the Phase 3 price history (AAPL, CAT, JNJ, JPM, PG, XOM, 2021-2023)
 //and reports each method at several confidence levels, the Euler risk contribution of each stock,
 //and a calibration check: how often did the portfolio actually lose more than each method's 1-day VaR?
+//Re-run after data hardening: prices now come through qre::data::load_price_csv and must pass the
+//quality report (qre::data::harden) before any risk number is computed
 //C++ only: the numerical methods are cross-validated against numpy/scipy in the test suite, and this
 //experiment is about how the methods behave on real data rather than about a new mathematical fact
 #include <cmath>
 #include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <vector>
 #include "qre/core/rng.hpp"
+#include "qre/data/csv_loader.hpp"
+#include "qre/data/quality.hpp"
 #include "qre/risk/pipeline.hpp"
 using qre::risk::VarEs;
-
-//Minimal loader for this experiment only: header row of tickers, first column is the date
-static bool load_prices(const std::string& path, qre::PriceMatrix& prices, std::vector<std::string>& tickers){
-    std::ifstream in(path);
-    if(!in.is_open()) return false;
-    std::string line;
-    std::getline(in, line);
-    std::stringstream hs(line);
-    std::string cell;
-    std::getline(hs, cell, ',');   //Date
-    while(std::getline(hs, cell, ',')) tickers.push_back(cell);
-    std::vector<std::vector<double>> rows;
-    while(std::getline(in, line)){
-        if(line.empty()) continue;
-        std::stringstream ls(line);
-        std::getline(ls, cell, ',');
-        std::vector<double> row;
-        while(std::getline(ls, cell, ',')){
-            row.push_back(cell.empty() ? std::numeric_limits<double>::quiet_NaN() : std::stod(cell));
-        }
-        rows.push_back(row);
-    }
-    prices.resize(static_cast<Eigen::Index>(rows.size()), static_cast<Eigen::Index>(tickers.size()));
-    for(std::size_t r = 0; r < rows.size(); ++r)
-        for(std::size_t c = 0; c < tickers.size(); ++c)
-            prices(static_cast<Eigen::Index>(r), static_cast<Eigen::Index>(c)) = rows[r][c];
-    return true;
-}
 
 int main(){
     const std::string data_path = "data/market_data/adjusted_close.csv";
     const std::string out_dir = "cpp/experiments/05-var-es/results/";
-    qre::PriceMatrix prices;
-    std::vector<std::string> tickers;
-    if(!load_prices(data_path, prices, tickers)){
-        std::cerr << "Failed to open " << data_path << "\nRun from repo root \n";
+    qre::data::PriceTable table;
+    try{ table = qre::data::load_price_csv(data_path); }
+    catch(const std::exception& e){
+        std::cerr << e.what() << "\nRun from repo root \n";
         return 1;
     }
+    //Refuse to compute risk on data that fails the quality report
+    const auto quality = qre::data::harden(table.prices);
+    if(!quality.report.clean()){
+        std::cerr << "price data failed the quality report; inspect it with qre::data::harden before trusting VaR\n";
+        return 1;
+    }
+    std::cout << "quality report: clean (" << table.dates.front() << " to " << table.dates.back() << ")\n";
+    const qre::PriceMatrix& prices = quality.prices;
+    const std::vector<std::string>& tickers = table.tickers;
     std::ofstream methods(out_dir + "var_es_methods.csv");
     std::ofstream contrib(out_dir + "risk_contributions.csv");
     std::ofstream stats(out_dir + "portfolio_stats.csv");

@@ -52,4 +52,13 @@ target_link_libraries(var_es_methods
         qre
 )
 
+add_executable(corruption_injection
+    data-hardening/corruption_injection.cpp
+)
+
+target_link_libraries(corruption_injection
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
