@@ -70,4 +70,13 @@ target_link_libraries(var_backtest
         qre
 )
 
+add_executable(adaptive_backtest
+    adaptive-vol/adaptive_backtest.cpp
+)
+
+target_link_libraries(adaptive_backtest
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
