@@ -97,4 +97,13 @@ target_link_libraries(garch_t_backtest
         qre
 )
 
+add_executable(stochastic_processes
+    stochastic-processes/stochastic_processes.cpp
+)
+
+target_link_libraries(stochastic_processes
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment

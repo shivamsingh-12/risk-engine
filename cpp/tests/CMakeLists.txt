@@ -19,6 +19,7 @@ add_executable(qre_tests
     test_ewma.cpp
     test_garch.cpp
     test_student_t.cpp
+    test_phase8.cpp
 )
 target_link_libraries(qre_tests PRIVATE qre GTest::gtest_main)
 
