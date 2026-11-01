@@ -6,7 +6,8 @@ Conventions (match cpp/include/qre/risk/backtest.hpp):
     - Forecast for day t uses only price rows <= t-1 (data.hardening.pit_window).
     - Weights are held constant every day (daily rebalanced to fixed weights).
     - Methods: historical, parametric, monte_carlo (equal-weight window) and the adaptive
-      ewma (EWMA-covariance parametric) and fhs (filtered historical simulation), both with decay lam.
+      ewma (EWMA-covariance parametric) and fhs (filtered historical simulation), both with decay lam,
+      and garch / fhs_garch (GARCH(1,1) refitted every day on the portfolio return window).
 
 Tests:
     Kupiec POF        H0: breach rate == alpha                       LR ~ chi2(1)
@@ -25,6 +26,7 @@ from scipy.stats import binom
 
 from qre.data.hardening import pit_window
 from qre.risk import ewma
+from qre.risk import garch
 from qre.risk import var_es as ve
 
 
@@ -129,8 +131,8 @@ def rolling_backtest(prices, weights, window=250, confidence=0.99, method="histo
         raise ValueError("prices columns must match number of weights")
     if window < 2 or prices.shape[0] < window + 2:
         raise ValueError("need window >= 2 and at least window + 2 price rows")
-    if method not in ("historical", "parametric", "monte_carlo", "ewma", "fhs"):
-        raise ValueError("method must be historical, parametric, monte_carlo, ewma or fhs")
+    if method not in ("historical", "parametric", "monte_carlo", "ewma", "fhs", "garch", "fhs_garch"):
+        raise ValueError("method must be historical, parametric, monte_carlo, ewma, fhs, garch or fhs_garch")
     if not np.all(np.isfinite(prices)) or np.any(prices <= 0.0):
         raise ValueError("prices must be finite and positive; run data hardening first")
 
@@ -143,6 +145,9 @@ def rolling_backtest(prices, weights, window=250, confidence=0.99, method="histo
             var[i], es[i] = ve.historical_var_es(ve.portfolio_returns(rets, weights), confidence)
         elif method == "fhs":
             var[i], es[i] = ewma.fhs_var_es(ve.portfolio_returns(rets, weights), confidence, lam)
+        elif method in ("garch", "fhs_garch"):
+            var[i], es[i] = garch.garch_var_es(ve.portfolio_returns(rets, weights), confidence,
+                                               filtered=(method == "fhs_garch"))
         elif method == "ewma":
             var[i], es[i] = ewma.ewma_parametric_var_es(rets, weights, confidence, lam)
         else:

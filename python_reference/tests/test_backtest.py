@@ -191,4 +191,4 @@ def test_rolling_backtest_rejects_bad_input():
     with pytest.raises(ValueError):
         bt.rolling_backtest(bad, W, window=10)
     with pytest.raises(ValueError):
-        bt.rolling_backtest(p, W, window=10, method="garch")
+        bt.rolling_backtest(p, W, window=10, method="not_a_method")
