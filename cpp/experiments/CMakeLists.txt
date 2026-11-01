@@ -79,4 +79,22 @@ target_link_libraries(adaptive_backtest
         qre
 )
 
+add_executable(garch_backtest
+    garch/garch_backtest.cpp
+)
+
+target_link_libraries(garch_backtest
+    PRIVATE
+        qre
+)
+
+add_executable(garch_t_backtest
+    garch-t/garch_t_backtest.cpp
+)
+
+target_link_libraries(garch_t_backtest
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
