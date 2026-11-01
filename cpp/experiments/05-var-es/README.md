@@ -51,5 +51,8 @@ Risk contributions at the portfolio level (share of the 0.991% daily volatility)
 **Conclusion**  
 The pipeline runs end to end on real data and the three methods behave as theory predicts: they agree where the normal assumption holds and separate in the tail. For this portfolio, normal-based VaR at 97.5% and above likely understates risk by 6% to 9%, and on this evidence historical simulation is the better default when enough history exists. Backtesting, which would turn the exceedance observations into a formal test, is the natural next piece.
 
+**Re-run on Hardened Data**  
+After the data-hardening work, this experiment was switched to the shared loader (`qre::data::load_price_csv`) and now refuses to run unless the price history passes the quality report (`qre::data::harden`). The report was clean: no gaps, non-positive prices, stale runs, bad ticks or split candidates, and the largest daily move in any stock was 8.9%. All three result files were reproduced byte for byte, so the conclusions above stand. See /cpp/experiments/data-hardening for what the same pipeline does when the data is not clean.
+
 **File Paths**  
 /cpp/experiments/05-var-es/var_es_methods.cpp and csv with results in /cpp/experiments/05-var-es/results/
