@@ -14,17 +14,28 @@ Estimation (matches cpp/include/qre/risk/garch.hpp):
     - h_0 = v. Negative log-likelihood = 0.5 * sum(ln(2 pi) + ln h_t + r_t^2 / h_t), t = 0..n-1.
     - Nelder-Mead from three starting points, keep the best. This reference uses scipy's Nelder-Mead;
       the C++ uses its own implementation, and the tests check both find the same optimum.
+
+Student-t innovations (dist="t"): z_t follows a STANDARDIZED Student-t with nu > 2 degrees of freedom
+(scaled to unit variance, so h_t is still the variance). nu is estimated jointly with alpha and beta via
+nu = 2 + exp(c). Small nu means fat tails; nu -> infinity recovers the normal model.
+    log density of r_t:  lgamma((nu+1)/2) - lgamma(nu/2) - 0.5 ln(pi (nu-2)) - 0.5 ln h_t
+                         - (nu+1)/2 ln(1 + r_t^2 / (h_t (nu-2)))
+    VaR/ES at confidence c with q = t_nu^{-1}(c) and s = sigma sqrt((nu-2)/nu):
+        VaR = s q,   ES = s f_nu(q) / (1-c) (nu + q^2) / (nu - 1)
 """
 import math
 from dataclasses import dataclass
 
 import numpy as np
 from scipy.optimize import minimize
+from scipy.special import gammaln
+from scipy.stats import t as student_t
 
 from qre.risk import var_es as ve
 
 P_MAX = 0.9999                       # persistence cap: alpha + beta < 1 keeps omega > 0
 STARTS = ((0.05, 0.90), (0.10, 0.80), (0.02, 0.97))
+T_STARTS = ((0.05, 0.90, 8.0), (0.10, 0.80, 5.0), (0.02, 0.97, 20.0))
 LOG_2PI = math.log(2.0 * math.pi)
 
 
@@ -64,6 +75,32 @@ def neg_loglik(theta, returns, v):
     return 0.5 * float(np.sum(LOG_2PI + np.log(h) + r * r / h))
 
 
+def nu_from_theta(c):
+    return 2.0 + math.exp(c)
+
+
+def neg_loglik_t(theta, returns, v):
+    alpha, beta = params_from_theta(theta[:2])
+    nu = nu_from_theta(theta[2])
+    r = np.asarray(returns, dtype=float)
+    h = variance_path(r, v * (1.0 - alpha - beta), alpha, beta, v)[:-1]
+    const = gammaln((nu + 1.0) / 2.0) - gammaln(nu / 2.0) - 0.5 * math.log(math.pi * (nu - 2.0))
+    ll = const - 0.5 * np.log(h) - 0.5 * (nu + 1.0) * np.log1p(r * r / (h * (nu - 2.0)))
+    return -float(np.sum(ll))
+
+
+def std_t_var_es(sigma, nu, confidence):
+    """VaR/ES (positive losses) of sigma * z, z a standardized Student-t with nu > 2 degrees of freedom."""
+    if not (0.0 < confidence < 1.0):
+        raise ValueError("confidence must be in (0, 1)")
+    if sigma <= 0.0 or nu <= 2.0:
+        raise ValueError("need sigma > 0 and nu > 2")
+    q = float(student_t.ppf(confidence, nu))
+    s = sigma * math.sqrt((nu - 2.0) / nu)
+    es = s * float(student_t.pdf(q, nu)) / (1.0 - confidence) * (nu + q * q) / (nu - 1.0)
+    return s * q, es
+
+
 @dataclass
 class GarchFit:
     omega: float
@@ -72,19 +109,33 @@ class GarchFit:
     long_run_var: float
     loglik: float
     converged: bool
+    nu: float = math.inf       # Student-t degrees of freedom; inf for the normal model
 
     @property
     def persistence(self):
         return self.alpha + self.beta
 
 
-def fit_garch(returns):
+def fit_garch(returns, dist="normal"):
     r = np.asarray(returns, dtype=float)
     if r.ndim != 1 or r.size < 10:
         raise ValueError("need a 1-D series with at least 10 returns")
+    if dist not in ("normal", "t"):
+        raise ValueError("dist must be 'normal' or 't'")
     v = float(np.mean(r * r))
     if v <= 0.0:
         raise ValueError("returns are all zero; volatility is undefined")
+    if dist == "t":
+        best = None
+        for a0, b0, nu0 in T_STARTS:
+            x0 = np.append(theta_from_params(a0, b0), math.log(nu0 - 2.0))
+            res = minimize(neg_loglik_t, x0, args=(r, v), method="Nelder-Mead",
+                           options={"xatol": 1e-10, "fatol": 1e-12, "maxiter": 6000, "maxfev": 12000})
+            if best is None or res.fun < best.fun:
+                best = res
+        alpha, beta = params_from_theta(best.x[:2])
+        return GarchFit(v * (1.0 - alpha - beta), alpha, beta, v, -float(best.fun), bool(best.success),
+                        nu_from_theta(best.x[2]))
     best = None
     for a0, b0 in STARTS:
         res = minimize(neg_loglik, theta_from_params(a0, b0), args=(r, v), method="Nelder-Mead",
@@ -100,25 +151,28 @@ def forecast_variance(fit, returns):
     return float(variance_path(returns, fit.omega, fit.alpha, fit.beta, fit.long_run_var)[-1])
 
 
-def garch_var_es(returns, confidence, filtered=False):
+def garch_var_es(returns, confidence, filtered=False, dist="normal"):
     """GARCH VaR/ES of a 1-D portfolio return series.
-    filtered=False: normal with the GARCH volatility forecast.
+    filtered=False: the model's own distribution (normal, or standardized t when dist="t") at the forecast vol.
     filtered=True : filtered historical simulation with GARCH volatilities (standardized residuals
                     rescaled to the forecast), which keeps the empirical tail shape."""
     r = np.asarray(returns, dtype=float)
-    fit = fit_garch(r)
+    fit = fit_garch(r, dist)
     h = variance_path(r, fit.omega, fit.alpha, fit.beta, fit.long_run_var)
     sigma_next = math.sqrt(h[-1])
     if not filtered:
+        if dist == "t":
+            return std_t_var_es(sigma_next, fit.nu, confidence)
         return ve.parametric_var_es(0.0, sigma_next, confidence)
     scenarios = r / np.sqrt(h[:-1]) * sigma_next
     return ve.var_es_from_losses(-scenarios, confidence)
 
 
-def simulate_garch(n, omega, alpha, beta, seed=0):
-    """Simulated GARCH(1,1) returns, started at the long-run variance (used for testing)."""
+def simulate_garch(n, omega, alpha, beta, seed=0, nu=None):
+    """Simulated GARCH(1,1) returns, started at the long-run variance (used for testing).
+    nu=None: normal shocks; otherwise standardized Student-t shocks with nu degrees of freedom."""
     rng = np.random.default_rng(seed)
-    z = rng.standard_normal(n)
+    z = rng.standard_normal(n) if nu is None else rng.standard_t(nu, n) * math.sqrt((nu - 2.0) / nu)
     h = omega / (1.0 - alpha - beta)
     out = np.empty(n)
     for t in range(n):

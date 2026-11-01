@@ -1,0 +1,4 @@
+series,n,excess_kurtosis,garch_normal_loglik,garch_t_loglik,nu_full_history
+raw_portfolio_returns,752,1.087164768,2433.828887,2435.629937,15.57407159
+garch_standardized_residuals,752,0.3845407943,,,
+nu_250_day_windows,502,,,,17.63338644

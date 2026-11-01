@@ -1,10 +1,12 @@
 #pragma once
 #include <cmath>
 #include <limits>
+#include <numbers>
 #include <utility>
 #include <vector>
 #include <Eigen/Dense>
 #include "qre/core/exceptions.hpp"
+#include "qre/distributions/student_t.hpp"
 #include "qre/optimization/nelder_mead.hpp"
 #include "qre/risk/var_es.hpp"
 //GARCH(1,1) on zero-mean returns:
@@ -16,7 +18,13 @@
 //    -> every optimizer step is a valid model (alpha, beta >= 0, alpha + beta < 1, omega > 0)
 //  h_0 = v; negative log-likelihood 0.5 sum(ln 2pi + ln h_t + r_t^2 / h_t)
 //  Nelder-Mead (optimization/nelder_mead.hpp) from three starting points, best one kept
+//Student-t shocks (GarchDist::StudentT): z_t is a STANDARDIZED Student-t (unit variance) with nu > 2,
+//  estimated jointly with alpha and beta via nu = 2 + exp(c); small nu = fat tails, nu -> infinity = normal
+//  log density: lgamma((nu+1)/2) - lgamma(nu/2) - 0.5 ln(pi (nu-2)) - 0.5 ln h - (nu+1)/2 ln(1 + r^2 / (h (nu-2)))
+//  VaR/ES with q = t_nu^{-1}(c), s = sigma sqrt((nu-2)/nu): VaR = s q, ES = s f_nu(q) / (1-c) (nu + q^2) / (nu - 1)
 namespace qre::risk{
+    enum class GarchDist {Normal, StudentT};
+
     struct GarchFit{
         double omega;
         double alpha;
@@ -24,6 +32,7 @@ namespace qre::risk{
         double long_run_var;
         double loglik;
         bool converged;
+        double nu = std::numeric_limits<double>::infinity();   //Student-t degrees of freedom; inf for normal
         double persistence() const { return alpha + beta; }
     };
 
@@ -63,12 +72,52 @@ namespace qre::risk{
         return 0.5 * nll;
     }
 
-    inline GarchFit fit_garch(const std::vector<double>& r){
+    inline double garch_t_neg_loglik(const Eigen::VectorXd& theta, const std::vector<double>& r, double v){
+        Eigen::VectorXd ab(2);
+        ab << theta(0), theta(1);
+        const auto [alpha, beta] = garch_params_from_theta(ab);
+        const double nu = 2.0 + std::exp(theta(2));
+        const auto h = garch_variance_path(r, v * (1.0 - alpha - beta), alpha, beta, v);
+        const double c = std::lgamma((nu + 1.0) / 2.0) - std::lgamma(nu / 2.0) - 0.5 * std::log(std::numbers::pi * (nu - 2.0));
+        double ll = 0.0;
+        for(std::size_t t = 0; t < r.size(); ++t){
+            ll += c - 0.5 * std::log(h[t]) - 0.5 * (nu + 1.0) * std::log1p(r[t] * r[t] / (h[t] * (nu - 2.0)));
+        }
+        return -ll;
+    }
+
+    //VaR/ES (positive losses) of sigma * z, z a standardized Student-t with nu > 2
+    inline VarEs std_t_var_es(double sigma, double nu, double confidence){
+        if(!(confidence > 0.0 && confidence < 1.0)) throw InvalidInputError("confidence must be in (0, 1)");
+        if(sigma <= 0.0 || !(nu > 2.0)) throw InvalidInputError("need sigma > 0 and nu > 2");
+        const double q = distributions::student_t::quantile(confidence, nu);
+        const double s = sigma * std::sqrt((nu - 2.0) / nu);
+        const double es = s * distributions::student_t::pdf(q, nu) / (1.0 - confidence) * (nu + q * q) / (nu - 1.0);
+        return VarEs{s * q, es};
+    }
+
+    inline GarchFit fit_garch(const std::vector<double>& r, GarchDist dist = GarchDist::Normal){
         if(r.size() < 10) throw InvalidInputError("need at least 10 returns");
         double v = 0.0;
         for(double x : r) v += x * x;
         v /= static_cast<double>(r.size());
         if(v <= 0.0) throw InvalidInputError("returns are all zero; volatility is undefined");
+        if(dist == GarchDist::StudentT){
+            auto objective_t = [&r, v](const Eigen::VectorXd& theta){ return garch_t_neg_loglik(theta, r, v); };
+            const double starts_t[3][3] = {{0.05, 0.90, 8.0}, {0.10, 0.80, 5.0}, {0.02, 0.97, 20.0}};
+            optimization::MinimizeResult best{Eigen::VectorXd(), std::numeric_limits<double>::infinity(), 0, false};
+            for(const auto& s0 : starts_t){
+                Eigen::VectorXd x0(3);
+                const Eigen::VectorXd ab = garch_theta_from_params(s0[0], s0[1]);
+                x0 << ab(0), ab(1), std::log(s0[2] - 2.0);
+                const auto res = optimization::nelder_mead(objective_t, x0, 0.5, 1e-10, 1e-12, 6000);
+                if(res.fx < best.fx) best = res;
+            }
+            Eigen::VectorXd ab(2);
+            ab << best.x(0), best.x(1);
+            const auto [alpha, beta] = garch_params_from_theta(ab);
+            return GarchFit{v * (1.0 - alpha - beta), alpha, beta, v, -best.fx, best.converged, 2.0 + std::exp(best.x(2))};
+        }
         auto objective = [&r, v](const Eigen::VectorXd& theta){ return garch_neg_loglik(theta, r, v); };
         const double starts[3][2] = {{0.05, 0.90}, {0.10, 0.80}, {0.02, 0.97}};
         optimization::MinimizeResult best{Eigen::VectorXd(), std::numeric_limits<double>::infinity(), 0, false};
@@ -84,13 +133,17 @@ namespace qre::risk{
         return garch_variance_path(r, fit.omega, fit.alpha, fit.beta, fit.long_run_var).back();
     }
 
-    //filtered = false: normal with the GARCH vol forecast
+    //filtered = false: the model's own distribution (normal, or standardized t) at the GARCH vol forecast
     //filtered = true : filtered historical simulation with GARCH volatilities (keeps the empirical tail shape)
-    inline VarEs garch_var_es(const std::vector<double>& r, double confidence, bool filtered = false){
-        const GarchFit fit = fit_garch(r);
+    inline VarEs garch_var_es(const std::vector<double>& r, double confidence, bool filtered = false,
+                              GarchDist dist = GarchDist::Normal){
+        const GarchFit fit = fit_garch(r, dist);
         const auto h = garch_variance_path(r, fit.omega, fit.alpha, fit.beta, fit.long_run_var);
         const double sigma_next = std::sqrt(h.back());
-        if(!filtered) return parametric_var_es(0.0, sigma_next, confidence);
+        if(!filtered){
+            if(dist == GarchDist::StudentT) return std_t_var_es(sigma_next, fit.nu, confidence);
+            return parametric_var_es(0.0, sigma_next, confidence);
+        }
         std::vector<double> losses(r.size());
         for(std::size_t t = 0; t < r.size(); ++t) losses[t] = -(r[t] / std::sqrt(h[t])) * sigma_next;
         return var_es_from_losses(losses, confidence);

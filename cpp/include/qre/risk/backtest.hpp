@@ -20,7 +20,8 @@
 //Weights are held constant every day (daily rebalanced to fixed weights)
 //Methods: Historical, Parametric, MonteCarlo (equal-weight window) and the adaptive EwmaParametric and
 //FilteredHistorical (both use EWMA decay lam, see ewma.hpp), and GarchParametric / GarchFiltered
-//(GARCH(1,1) refitted every day on the portfolio return window, see garch.hpp)
+//(GARCH(1,1) refitted every day on the portfolio return window, see garch.hpp), and GarchStudentT
+//(GARCH(1,1) with standardized Student-t shocks, nu estimated every day)
 //  Kupiec POF        H0: breach rate == alpha                  LR ~ chi2(1)
 //  Christoffersen    H0: breaches independent (no clustering)  LR ~ chi2(1)
 //  Conditional cov.  both of the above                         LR ~ chi2(2)
@@ -127,7 +128,7 @@ namespace qre::risk{
     }
 
     enum class BacktestMethod {Historical, Parametric, MonteCarlo, EwmaParametric, FilteredHistorical,
-                               GarchParametric, GarchFiltered};
+                               GarchParametric, GarchFiltered, GarchStudentT};
 
     struct BacktestSeries{
         std::vector<Eigen::Index> rows;     //forecast day t (row index into prices)
@@ -160,6 +161,8 @@ namespace qre::risk{
                 f = historical_var_es(portfolio_returns(rets, weights), confidence);
             } else if(method == BacktestMethod::FilteredHistorical){
                 f = fhs_var_es(portfolio_returns(rets, weights), confidence, lam);
+            } else if(method == BacktestMethod::GarchStudentT){
+                f = garch_var_es(portfolio_returns(rets, weights), confidence, false, GarchDist::StudentT);
             } else if(method == BacktestMethod::GarchParametric || method == BacktestMethod::GarchFiltered){
                 f = garch_var_es(portfolio_returns(rets, weights), confidence, method == BacktestMethod::GarchFiltered);
             } else if(method == BacktestMethod::EwmaParametric){
