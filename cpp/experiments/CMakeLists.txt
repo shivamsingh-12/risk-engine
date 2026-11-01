@@ -61,4 +61,13 @@ target_link_libraries(corruption_injection
         qre
 )
 
+add_executable(var_backtest
+    backtesting/var_backtest.cpp
+)
+
+target_link_libraries(var_backtest
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
