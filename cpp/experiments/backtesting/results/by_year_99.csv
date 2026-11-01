@@ -1,0 +1,7 @@
+year,method,n_obs,breaches,expected_breaches,kupiec_p,traffic_light
+2022,historical,251,7,2.51,0.0194521,yellow
+2022,parametric,251,11,2.51,6.96288e-05,red
+2022,monte_carlo,251,11,2.51,6.96288e-05,red
+2023,historical,250,0,2.5,0.0249815,green
+2023,parametric,250,0,2.5,0.0249815,green
+2023,monte_carlo,250,0,2.5,0.0249815,green

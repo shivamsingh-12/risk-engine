@@ -15,6 +15,7 @@ add_executable(qre_tests
     test_gbm_path.cpp
     test_var_es.cpp
     test_data_hardening.cpp
+    test_backtest.cpp
 )
 target_link_libraries(qre_tests PRIVATE qre GTest::gtest_main)
 
