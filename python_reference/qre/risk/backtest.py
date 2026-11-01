@@ -5,6 +5,8 @@ Conventions (match cpp/include/qre/risk/backtest.hpp):
     - alpha = 1 - confidence is the breach probability a correct model should produce.
     - Forecast for day t uses only price rows <= t-1 (data.hardening.pit_window).
     - Weights are held constant every day (daily rebalanced to fixed weights).
+    - Methods: historical, parametric, monte_carlo (equal-weight window) and the adaptive
+      ewma (EWMA-covariance parametric) and fhs (filtered historical simulation), both with decay lam.
 
 Tests:
     Kupiec POF        H0: breach rate == alpha                       LR ~ chi2(1)
@@ -22,6 +24,7 @@ import numpy as np
 from scipy.stats import binom
 
 from qre.data.hardening import pit_window
+from qre.risk import ewma
 from qre.risk import var_es as ve
 
 
@@ -118,7 +121,7 @@ class BacktestSeries:
 
 
 def rolling_backtest(prices, weights, window=250, confidence=0.99, method="historical",
-                     n_paths=20_000, seed=42, trading_days=252):
+                     n_paths=20_000, seed=42, trading_days=252, lam=0.94):
     """One forecast per day t = window+1 .. T-1, each from the `window` returns ending at row t-1."""
     prices = np.asarray(prices, dtype=float)
     weights = np.asarray(weights, dtype=float)
@@ -126,8 +129,8 @@ def rolling_backtest(prices, weights, window=250, confidence=0.99, method="histo
         raise ValueError("prices columns must match number of weights")
     if window < 2 or prices.shape[0] < window + 2:
         raise ValueError("need window >= 2 and at least window + 2 price rows")
-    if method not in ("historical", "parametric", "monte_carlo"):
-        raise ValueError("method must be historical, parametric or monte_carlo")
+    if method not in ("historical", "parametric", "monte_carlo", "ewma", "fhs"):
+        raise ValueError("method must be historical, parametric, monte_carlo, ewma or fhs")
     if not np.all(np.isfinite(prices)) or np.any(prices <= 0.0):
         raise ValueError("prices must be finite and positive; run data hardening first")
 
@@ -138,6 +141,10 @@ def rolling_backtest(prices, weights, window=250, confidence=0.99, method="histo
         rets = w[1:] / w[:-1] - 1.0
         if method == "historical":
             var[i], es[i] = ve.historical_var_es(ve.portfolio_returns(rets, weights), confidence)
+        elif method == "fhs":
+            var[i], es[i] = ewma.fhs_var_es(ve.portfolio_returns(rets, weights), confidence, lam)
+        elif method == "ewma":
+            var[i], es[i] = ewma.ewma_parametric_var_es(rets, weights, confidence, lam)
         else:
             cov = np.cov(rets, rowvar=False, ddof=1)
             if method == "parametric":

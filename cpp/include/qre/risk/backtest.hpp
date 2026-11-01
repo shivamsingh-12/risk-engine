@@ -11,11 +11,14 @@
 #include "qre/data/point_in_time.hpp"
 #include "qre/data/returns.hpp"
 #include "qre/linalg/covariance.hpp"
+#include "qre/risk/ewma.hpp"
 #include "qre/risk/var_es.hpp"
 //Backtesting: rolling out-of-sample VaR/ES forecasts and the statistical tests that judge them
 //Conventions: losses positive; breach on day t means loss_t > VaR_t (strictly); alpha = 1 - confidence
 //The forecast for day t uses only price rows <= t-1 (data::pit_window) -> no look-ahead
 //Weights are held constant every day (daily rebalanced to fixed weights)
+//Methods: Historical, Parametric, MonteCarlo (equal-weight window) and the adaptive EwmaParametric and
+//FilteredHistorical (both use EWMA decay lam, see ewma.hpp)
 //  Kupiec POF        H0: breach rate == alpha                  LR ~ chi2(1)
 //  Christoffersen    H0: breaches independent (no clustering)  LR ~ chi2(1)
 //  Conditional cov.  both of the above                         LR ~ chi2(2)
@@ -121,7 +124,7 @@ namespace qre::risk{
         return sum / (static_cast<double>(losses.size()) * alpha) - 1.0;
     }
 
-    enum class BacktestMethod {Historical, Parametric, MonteCarlo};
+    enum class BacktestMethod {Historical, Parametric, MonteCarlo, EwmaParametric, FilteredHistorical};
 
     struct BacktestSeries{
         std::vector<Eigen::Index> rows;     //forecast day t (row index into prices)
@@ -139,7 +142,8 @@ namespace qre::risk{
     inline BacktestSeries rolling_backtest(const PriceMatrix& prices, const WeightVector& weights,
                                            Eigen::Index window = 250, double confidence = 0.99,
                                            BacktestMethod method = BacktestMethod::Historical,
-                                           std::size_t n_paths = 20000, uint64_t seed = 42, int trading_days = 252){
+                                           std::size_t n_paths = 20000, uint64_t seed = 42, int trading_days = 252,
+                                           double lam = 0.94){
         if(prices.cols() != weights.size()) throw InvalidInputError("prices columns must match number of weights");
         if(window < 2 || prices.rows() < window + 2) throw InvalidInputError("need window >= 2 and at least window + 2 price rows");
         if(!prices.allFinite() || (prices.array() <= 0.0).any()){
@@ -151,6 +155,10 @@ namespace qre::risk{
             VarEs f{};
             if(method == BacktestMethod::Historical){
                 f = historical_var_es(portfolio_returns(rets, weights), confidence);
+            } else if(method == BacktestMethod::FilteredHistorical){
+                f = fhs_var_es(portfolio_returns(rets, weights), confidence, lam);
+            } else if(method == BacktestMethod::EwmaParametric){
+                f = ewma_parametric_var_es(rets, weights, confidence, lam);
             } else {
                 const CovarianceMatrix cov = linalg::sample_cov(rets);
                 if(method == BacktestMethod::Parametric){
