@@ -34,6 +34,3 @@ Two changes to note:
 
 **Why Python and C++?**  
 A dual implementation approach for which Python accounts for algorithmic prototyping and closed-form validation, C++ 23 for production-grade performance. Every C++ module is cross validated against its Python counterpart before assumed correct, which isolates language-level bugs from mathematical errors.
-
-**Notes**  
-This is a personal learning project, evolving as I learn and understand more math and how to implement it to be an active and useful resource in my project. Structure, phases, files, may change as I move forward, docs/[progress.md](http://progress.md) has my notes on why I choose to write code the way I do.
