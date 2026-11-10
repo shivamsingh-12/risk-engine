@@ -21,6 +21,7 @@ add_executable(qre_tests
     test_student_t.cpp
     test_phase8.cpp
     test_heston.cpp
+    test_phase10.cpp
 )
 target_link_libraries(qre_tests PRIVATE qre GTest::gtest_main)
 

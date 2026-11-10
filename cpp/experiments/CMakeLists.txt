@@ -124,4 +124,13 @@ target_link_libraries(heston_calibration
         qre
 )
 
+add_executable(shrinkage_experiment
+    08-shrinkage/shrinkage_experiment.cpp
+)
+
+target_link_libraries(shrinkage_experiment
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
