@@ -19,10 +19,10 @@ A short roadmap is listed below:
 | 5 | Financial math \+ derivatives (Black-Scholes) | Done |
 | 6 | Monte Carlo | Done |
 | 7 | Portfolio simulation \+ risk (VaR/ES) | Done |
-| 8 | Stochastic processes \+ GBM | Not started |
-| 9 | Stochastic volatility \+ Heston | Not started |
-| 10 | High-dimensional risk \+ RMT | Not started |
-| 11 | Tail risk \+ model uncertainty | Not started |
+| 8 | Stochastic processes \+ GBM | Done |
+| 9 | Stochastic volatility \+ Heston | Done |
+| 10 | High-dimensional risk \+ RMT | Done |
+| 11 | Tail risk \+ model uncertainty | Done |
 | 12 | Advanced Monte Carlo \+ AAD | Not started |
 | 13 | Adaptive risk engine | Not started |
 | 14 | Production quant research system | Not started |
