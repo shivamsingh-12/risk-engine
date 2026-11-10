@@ -133,4 +133,13 @@ target_link_libraries(shrinkage_experiment
         qre
 )
 
+add_executable(evt_experiment
+    09-evt/evt_experiment.cpp
+)
+
+target_link_libraries(evt_experiment
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
