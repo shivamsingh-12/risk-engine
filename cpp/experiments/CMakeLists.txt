@@ -106,4 +106,22 @@ target_link_libraries(stochastic_processes
         qre
 )
 
+add_executable(heston_experiment
+    06-heston/heston_experiment.cpp
+)
+
+target_link_libraries(heston_experiment
+    PRIVATE
+        qre
+)
+
+add_executable(heston_calibration
+    07-calibration/heston_calibration.cpp
+)
+
+target_link_libraries(heston_calibration
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
