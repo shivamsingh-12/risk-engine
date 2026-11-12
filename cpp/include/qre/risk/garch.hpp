@@ -72,11 +72,18 @@ namespace qre::risk{
         return 0.5 * nll;
     }
 
+    //Upper bound on nu. The likelihood is nearly flat as nu -> infinity (the t becomes the normal), and without a
+    //bound the fit can drift to nu ~ 1e16, where lgamma differences and the Student-t cdf lose all precision and the
+    //VaR/ES come out as garbage (negative VaR, ES ~ 1e32). At nu = 1000 the t is already the normal for risk purposes
+    //(its 97.5% quantile is 0.1% above the normal one), so a fit that reaches the bound means "normal shocks"
+    inline constexpr double kNuMax = 1000.0;
+
     inline double garch_t_neg_loglik(const Eigen::VectorXd& theta, const std::vector<double>& r, double v){
         Eigen::VectorXd ab(2);
         ab << theta(0), theta(1);
         const auto [alpha, beta] = garch_params_from_theta(ab);
         const double nu = 2.0 + std::exp(theta(2));
+        if(!(nu <= kNuMax)) return std::numeric_limits<double>::infinity();
         const auto h = garch_variance_path(r, v * (1.0 - alpha - beta), alpha, beta, v);
         const double c = std::lgamma((nu + 1.0) / 2.0) - std::lgamma(nu / 2.0) - 0.5 * std::log(std::numbers::pi * (nu - 2.0));
         double ll = 0.0;

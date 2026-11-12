@@ -151,4 +151,13 @@ target_link_libraries(advanced_mc_experiment
         qre
 )
 
+add_executable(adaptive_engine_experiment
+    10-adaptive-engine/adaptive_engine_experiment.cpp
+)
+
+target_link_libraries(adaptive_engine_experiment
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
