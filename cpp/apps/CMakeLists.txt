@@ -1,0 +1,6 @@
+#Production executables (Phase 14)
+add_executable(qre_run qre_run.cpp)
+target_link_libraries(qre_run PRIVATE qre)
+if(QRE_ENABLE_WARNINGS)
+  target_compile_options(qre_run PRIVATE -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion)
+endif()

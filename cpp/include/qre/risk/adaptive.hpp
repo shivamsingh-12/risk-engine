@@ -73,6 +73,28 @@ namespace qre::risk{
         return s;
     }
 
+    //Weights for day t from the scores of days max(0, t - lookback) .. t-1 (t = scores.rows() -> the next day)
+    inline Eigen::VectorXd combination_weights(const Eigen::MatrixXd& scores, Eigen::Index t, Combination scheme,
+                                               Eigen::Index lookback = 100, double eta = 1.0){
+        const Eigen::Index K = scores.cols();
+        if(t < 1 || t > scores.rows() || lookback < 1 || eta < 0.0) throw InvalidInputError("need 1 <= t <= T, lookback >= 1 and eta >= 0");
+        const Eigen::Index start = std::max<Eigen::Index>(0, t - lookback);
+        const Eigen::VectorXd sum = scores.middleRows(start, t - start).colwise().sum().transpose();
+        Eigen::VectorXd w(K);
+        if(scheme == Combination::Equal){
+            w.setConstant(1.0 / static_cast<double>(K));
+        } else if(scheme == Combination::SelectBest){
+            Eigen::Index best = 0;
+            sum.minCoeff(&best);            //first minimum, like numpy argmin
+            w.setZero();
+            w(best) = 1.0;
+        } else {
+            w = (-eta * (sum.array() - sum.minCoeff())).exp().matrix();
+            w /= w.sum();
+        }
+        return w;
+    }
+
     inline CombinedForecast combine(const Eigen::MatrixXd& var, const Eigen::MatrixXd& es, const std::vector<double>& loss,
                                     double confidence, Combination scheme = Combination::Equal, Eigen::Index lookback = 100,
                                     double eta = 1.0, Eigen::Index burn = 100){
@@ -82,20 +104,7 @@ namespace qre::risk{
         CombinedForecast c{std::vector<double>(static_cast<std::size_t>(T - burn)), std::vector<double>(static_cast<std::size_t>(T - burn)),
                            Eigen::MatrixXd(T - burn, K)};
         for(Eigen::Index t = burn; t < T; ++t){
-            const Eigen::Index start = std::max<Eigen::Index>(0, t - lookback);
-            const Eigen::VectorXd sum = scores.middleRows(start, t - start).colwise().sum().transpose();
-            Eigen::VectorXd w(K);
-            if(scheme == Combination::Equal){
-                w.setConstant(1.0 / static_cast<double>(K));
-            } else if(scheme == Combination::SelectBest){
-                Eigen::Index best = 0;
-                sum.minCoeff(&best);            //first minimum, like numpy argmin
-                w.setZero();
-                w(best) = 1.0;
-            } else {
-                w = (-eta * (sum.array() - sum.minCoeff())).exp().matrix();
-                w /= w.sum();
-            }
+            const Eigen::VectorXd w = combination_weights(scores, t, scheme, lookback, eta);
             const auto i = static_cast<std::size_t>(t - burn);
             c.weights.row(t - burn) = w.transpose();
             c.var[i] = (w.array() * var.row(t).transpose().array()).sum();

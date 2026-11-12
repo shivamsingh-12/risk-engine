@@ -144,47 +144,58 @@ namespace qre::risk{
         }
     };
 
+    //Forecast of day t's VaR/ES from the `window` returns ending at row t-1 (t = prices.rows() forecasts the next,
+    //not yet observed day). Each day is independent of the others, so days can be computed in any order or in parallel
+    inline VarEs forecast_var_es(const PriceMatrix& prices, const WeightVector& weights, Eigen::Index t,
+                                 Eigen::Index window = 250, double confidence = 0.99,
+                                 BacktestMethod method = BacktestMethod::Historical,
+                                 std::size_t n_paths = 20000, uint64_t seed = 42, int trading_days = 252,
+                                 double lam = 0.94){
+        const ReturnMatrix rets = data::simple_return(data::pit_window(prices, t, window));
+        if(method == BacktestMethod::Historical) return historical_var_es(portfolio_returns(rets, weights), confidence);
+        if(method == BacktestMethod::FilteredHistorical) return fhs_var_es(portfolio_returns(rets, weights), confidence, lam);
+        if(method == BacktestMethod::GarchEvt) return garch_evt_var_es(portfolio_returns(rets, weights), confidence);
+        if(method == BacktestMethod::GarchStudentT){
+            return garch_var_es(portfolio_returns(rets, weights), confidence, false, GarchDist::StudentT);
+        }
+        if(method == BacktestMethod::GarchParametric || method == BacktestMethod::GarchFiltered){
+            return garch_var_es(portfolio_returns(rets, weights), confidence, method == BacktestMethod::GarchFiltered);
+        }
+        if(method == BacktestMethod::EwmaParametric) return ewma_parametric_var_es(rets, weights, confidence, lam);
+        const CovarianceMatrix cov = linalg::sample_cov(rets);
+        if(method == BacktestMethod::Parametric) return parametric_var_es(0.0, portfolio_vol(weights, cov), confidence);
+        Rng rng(seed + static_cast<uint64_t>(t));
+        return monte_carlo_var_es(weights, cov, confidence, 1, n_paths, rng, trading_days);
+    }
+
+    //Realized portfolio loss on day t (weights rebalanced daily)
+    inline double realized_loss(const PriceMatrix& prices, const WeightVector& weights, Eigen::Index t){
+        const Eigen::VectorXd day = (prices.row(t).array() / prices.row(t - 1).array() - 1.0).matrix().transpose();
+        return -weights.dot(day);
+    }
+
+    inline void check_backtest_inputs(const PriceMatrix& prices, const WeightVector& weights, Eigen::Index window){
+        if(prices.cols() != weights.size()) throw InvalidInputError("prices columns must match number of weights");
+        if(window < 2 || prices.rows() < window + 2) throw InvalidInputError("need window >= 2 and at least window + 2 price rows");
+        if(!prices.allFinite() || (prices.array() <= 0.0).any()){
+            throw InvalidInputError("prices must be finite and positive; run data hardening first");
+        }
+    }
+
     //One forecast per day t = window+1 .. T-1, each from the `window` returns ending at row t-1
     inline BacktestSeries rolling_backtest(const PriceMatrix& prices, const WeightVector& weights,
                                            Eigen::Index window = 250, double confidence = 0.99,
                                            BacktestMethod method = BacktestMethod::Historical,
                                            std::size_t n_paths = 20000, uint64_t seed = 42, int trading_days = 252,
                                            double lam = 0.94){
-        if(prices.cols() != weights.size()) throw InvalidInputError("prices columns must match number of weights");
-        if(window < 2 || prices.rows() < window + 2) throw InvalidInputError("need window >= 2 and at least window + 2 price rows");
-        if(!prices.allFinite() || (prices.array() <= 0.0).any()){
-            throw InvalidInputError("prices must be finite and positive; run data hardening first");
-        }
+        check_backtest_inputs(prices, weights, window);
         BacktestSeries s;
         for(Eigen::Index t = window + 1; t < prices.rows(); ++t){
-            const ReturnMatrix rets = data::simple_return(data::pit_window(prices, t, window));
-            VarEs f{};
-            if(method == BacktestMethod::Historical){
-                f = historical_var_es(portfolio_returns(rets, weights), confidence);
-            } else if(method == BacktestMethod::FilteredHistorical){
-                f = fhs_var_es(portfolio_returns(rets, weights), confidence, lam);
-            } else if(method == BacktestMethod::GarchEvt){
-                f = garch_evt_var_es(portfolio_returns(rets, weights), confidence);
-            } else if(method == BacktestMethod::GarchStudentT){
-                f = garch_var_es(portfolio_returns(rets, weights), confidence, false, GarchDist::StudentT);
-            } else if(method == BacktestMethod::GarchParametric || method == BacktestMethod::GarchFiltered){
-                f = garch_var_es(portfolio_returns(rets, weights), confidence, method == BacktestMethod::GarchFiltered);
-            } else if(method == BacktestMethod::EwmaParametric){
-                f = ewma_parametric_var_es(rets, weights, confidence, lam);
-            } else {
-                const CovarianceMatrix cov = linalg::sample_cov(rets);
-                if(method == BacktestMethod::Parametric){
-                    f = parametric_var_es(0.0, portfolio_vol(weights, cov), confidence);
-                } else {
-                    Rng rng(seed + static_cast<uint64_t>(t));
-                    f = monte_carlo_var_es(weights, cov, confidence, 1, n_paths, rng, trading_days);
-                }
-            }
-            const Eigen::VectorXd day = (prices.row(t).array() / prices.row(t - 1).array() - 1.0).matrix().transpose();
+            const VarEs f = forecast_var_es(prices, weights, t, window, confidence, method, n_paths, seed, trading_days, lam);
             s.rows.push_back(t);
             s.var.push_back(f.var);
             s.es.push_back(f.es);
-            s.loss.push_back(-weights.dot(day));
+            s.loss.push_back(realized_loss(prices, weights, t));
         }
         return s;
     }

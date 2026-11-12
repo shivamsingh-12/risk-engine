@@ -160,4 +160,13 @@ target_link_libraries(adaptive_engine_experiment
         qre
 )
 
+add_executable(production_experiment
+    production/production_experiment.cpp
+)
+
+target_link_libraries(production_experiment
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
