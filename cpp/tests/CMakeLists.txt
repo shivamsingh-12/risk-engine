@@ -23,6 +23,7 @@ add_executable(qre_tests
     test_heston.cpp
     test_phase10.cpp
     test_phase11.cpp
+    test_phase12.cpp
 )
 target_link_libraries(qre_tests PRIVATE qre GTest::gtest_main)
 

@@ -142,4 +142,13 @@ target_link_libraries(evt_experiment
         qre
 )
 
+add_executable(advanced_mc_experiment
+    advanced-mc/advanced_mc_experiment.cpp
+)
+
+target_link_libraries(advanced_mc_experiment
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
