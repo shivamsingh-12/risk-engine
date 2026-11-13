@@ -178,4 +178,13 @@ target_link_libraries(credit_experiment
         qre
 )
 
+add_executable(deep_hedging_experiment
+    deep-hedging/deep_hedging_experiment.cpp
+)
+
+target_link_libraries(deep_hedging_experiment
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
