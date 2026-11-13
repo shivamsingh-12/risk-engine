@@ -169,4 +169,13 @@ target_link_libraries(production_experiment
         qre
 )
 
+add_executable(credit_experiment
+    credit/credit_experiment.cpp
+)
+
+target_link_libraries(credit_experiment
+    PRIVATE
+        qre
+)
+
 #Extra add_executable for new experiment
