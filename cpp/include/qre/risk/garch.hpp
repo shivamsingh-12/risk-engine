@@ -94,9 +94,15 @@ namespace qre::risk{
     }
 
     //VaR/ES (positive losses) of sigma * z, z a standardized Student-t with nu > 2
+    inline constexpr double kNuNormalLimit = 1e6;
+
     inline VarEs std_t_var_es(double sigma, double nu, double confidence){
         if(!(confidence > 0.0 && confidence < 1.0)) throw InvalidInputError("confidence must be in (0, 1)");
         if(sigma <= 0.0 || !(nu > 2.0)) throw InvalidInputError("need sigma > 0 and nu > 2");
+        //Normal limit for very large nu: the Student-t incomplete-beta and lgamma terms lose precision there
+        //(on macOS/libc++ the continued fraction stops converging around nu = 1e7), while the t is already the
+        //normal to about 1e-6 relative at nu = 1e6
+        if(nu > kNuNormalLimit) return parametric_var_es(0.0, sigma, confidence);
         const double q = distributions::student_t::quantile(confidence, nu);
         const double s = sigma * std::sqrt((nu - 2.0) / nu);
         const double es = s * distributions::student_t::pdf(q, nu) / (1.0 - confidence) * (nu + q * q) / (nu - 1.0);
