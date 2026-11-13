@@ -23,9 +23,13 @@ A short roadmap is listed below:
 | 9 | Stochastic volatility \+ Heston | Done |
 | 10 | High-dimensional risk \+ RMT | Done |
 | 11 | Tail risk \+ model uncertainty | Done |
-| 12 | Advanced Monte Carlo \+ AAD | Not started |
-| 13 | Adaptive risk engine | Not started |
-| 14 | Production quant research system | Not started |
+| 12 | Advanced Monte Carlo \+ AAD | Done |
+| 13 | Adaptive risk engine | Done |
+| 14 | Production quant research system | Done |
+| 15 | Interactive Portfolio Risk App | Done |
+| 16 | Merton Credit | Done |
+| 17 | Deep hedging | Done |
+| 18 | Optimal execution | Done |
 
 Two changes to note:
 
