@@ -97,12 +97,17 @@ def neg_loglik_t(theta, returns, v):
     return -float(np.sum(ll))
 
 
+NU_NORMAL_LIMIT = 1e6
+
+
 def std_t_var_es(sigma, nu, confidence):
     """VaR/ES (positive losses) of sigma * z, z a standardized Student-t with nu > 2 degrees of freedom."""
     if not (0.0 < confidence < 1.0):
         raise ValueError("confidence must be in (0, 1)")
     if sigma <= 0.0 or nu <= 2.0:
         raise ValueError("need sigma > 0 and nu > 2")
+    if nu > NU_NORMAL_LIMIT:              # same normal limit as the C++ (the t is the normal to ~1e-6 here)
+        return ve.parametric_var_es(0.0, sigma, confidence)
     q = float(student_t.ppf(confidence, nu))
     s = sigma * math.sqrt((nu - 2.0) / nu)
     es = s * float(student_t.pdf(q, nu)) / (1.0 - confidence) * (nu + q * q) / (nu - 1.0)
