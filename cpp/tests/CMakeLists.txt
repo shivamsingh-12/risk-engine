@@ -25,8 +25,16 @@ add_executable(qre_tests
     test_phase11.cpp
     test_phase12.cpp
     test_phase13.cpp
+    test_phase14.cpp
 )
 target_link_libraries(qre_tests PRIVATE qre GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(qre_tests)
+
+#Phase 14: end-to-end run of the production executable on the real data (fast models), from the repo root
+if(QRE_BUILD_APPS)
+  add_test(NAME qre_run_smoke
+           COMMAND qre_run --config configs/ci_smoke.conf --output ${CMAKE_BINARY_DIR}/qre_run_smoke
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/..)
+endif()

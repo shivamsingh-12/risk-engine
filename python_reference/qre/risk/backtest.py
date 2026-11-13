@@ -125,48 +125,61 @@ class BacktestSeries:
         return self.loss > self.var
 
 
-def rolling_backtest(prices, weights, window=250, confidence=0.99, method="historical",
-                     n_paths=20_000, seed=42, trading_days=252, lam=0.94):
-    """One forecast per day t = window+1 .. T-1, each from the `window` returns ending at row t-1."""
-    prices = np.asarray(prices, dtype=float)
-    weights = np.asarray(weights, dtype=float)
+METHODS = ("historical", "parametric", "monte_carlo", "ewma", "fhs", "garch", "fhs_garch", "garch_t", "garch_evt")
+
+
+def forecast_var_es(prices, weights, t, window=250, confidence=0.99, method="historical",
+                    n_paths=20_000, seed=42, trading_days=252, lam=0.94):
+    """VaR/ES forecast for day t from the `window` returns ending at row t-1 (t = len(prices) forecasts the next,
+    not yet observed day). Days are independent, so they can be computed in any order or in parallel."""
+    w = pit_window(prices, t, window)
+    rets = w[1:] / w[:-1] - 1.0
+    if method == "historical":
+        return ve.historical_var_es(ve.portfolio_returns(rets, weights), confidence)
+    if method == "fhs":
+        return ewma.fhs_var_es(ve.portfolio_returns(rets, weights), confidence, lam)
+    if method == "garch_evt":
+        return evt.garch_evt_var_es(ve.portfolio_returns(rets, weights), confidence)
+    if method == "garch_t":
+        return garch.garch_var_es(ve.portfolio_returns(rets, weights), confidence, dist="t")
+    if method in ("garch", "fhs_garch"):
+        return garch.garch_var_es(ve.portfolio_returns(rets, weights), confidence, filtered=(method == "fhs_garch"))
+    if method == "ewma":
+        return ewma.ewma_parametric_var_es(rets, weights, confidence, lam)
+    cov = np.cov(rets, rowvar=False, ddof=1)
+    if method == "parametric":
+        return ve.parametric_var_es(0.0, ve.portfolio_vol(weights, cov), confidence)
+    return ve.monte_carlo_var_es(weights, cov, confidence, 1, n_paths, seed + int(t), trading_days)
+
+
+def realized_loss(prices, weights, t):
+    return -float(weights @ (prices[t] / prices[t - 1] - 1.0))
+
+
+def check_backtest_inputs(prices, weights, window, method="historical"):
     if prices.ndim != 2 or prices.shape[1] != weights.shape[0]:
         raise ValueError("prices columns must match number of weights")
     if window < 2 or prices.shape[0] < window + 2:
         raise ValueError("need window >= 2 and at least window + 2 price rows")
-    if method not in ("historical", "parametric", "monte_carlo", "ewma", "fhs", "garch", "fhs_garch", "garch_t",
-                      "garch_evt"):
+    if method not in METHODS:
         raise ValueError("method must be historical, parametric, monte_carlo, ewma, fhs, garch, fhs_garch, garch_t "
                          "or garch_evt")
     if not np.all(np.isfinite(prices)) or np.any(prices <= 0.0):
         raise ValueError("prices must be finite and positive; run data hardening first")
 
+
+def rolling_backtest(prices, weights, window=250, confidence=0.99, method="historical",
+                     n_paths=20_000, seed=42, trading_days=252, lam=0.94):
+    """One forecast per day t = window+1 .. T-1, each from the `window` returns ending at row t-1."""
+    prices = np.asarray(prices, dtype=float)
+    weights = np.asarray(weights, dtype=float)
+    check_backtest_inputs(prices, weights, window, method)
     rows = np.arange(window + 1, prices.shape[0])
     var = np.empty(rows.size); es = np.empty(rows.size); loss = np.empty(rows.size)
     for i, t in enumerate(rows):
-        w = pit_window(prices, t, window)
-        rets = w[1:] / w[:-1] - 1.0
-        if method == "historical":
-            var[i], es[i] = ve.historical_var_es(ve.portfolio_returns(rets, weights), confidence)
-        elif method == "fhs":
-            var[i], es[i] = ewma.fhs_var_es(ve.portfolio_returns(rets, weights), confidence, lam)
-        elif method == "garch_evt":
-            var[i], es[i] = evt.garch_evt_var_es(ve.portfolio_returns(rets, weights), confidence)
-        elif method == "garch_t":
-            var[i], es[i] = garch.garch_var_es(ve.portfolio_returns(rets, weights), confidence, dist="t")
-        elif method in ("garch", "fhs_garch"):
-            var[i], es[i] = garch.garch_var_es(ve.portfolio_returns(rets, weights), confidence,
-                                               filtered=(method == "fhs_garch"))
-        elif method == "ewma":
-            var[i], es[i] = ewma.ewma_parametric_var_es(rets, weights, confidence, lam)
-        else:
-            cov = np.cov(rets, rowvar=False, ddof=1)
-            if method == "parametric":
-                var[i], es[i] = ve.parametric_var_es(0.0, ve.portfolio_vol(weights, cov), confidence)
-            else:
-                var[i], es[i] = ve.monte_carlo_var_es(weights, cov, confidence, 1, n_paths, seed + int(t),
-                                                      trading_days)
-        loss[i] = -float(weights @ (prices[t] / prices[t - 1] - 1.0))
+        var[i], es[i] = forecast_var_es(prices, weights, t, window, confidence, method, n_paths, seed,
+                                        trading_days, lam)
+        loss[i] = realized_loss(prices, weights, t)
     return BacktestSeries(rows, var, es, loss)
 
 

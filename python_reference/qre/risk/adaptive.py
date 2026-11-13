@@ -31,6 +31,26 @@ def run_models(prices, weights, methods, window=250, confidence=0.99):
             series[0].loss, rows)
 
 
+def combination_weights(scores, t, scheme="equal", lookback=100, eta=1.0):
+    """Weights for day t from the scores of days max(0, t - lookback) .. t-1 (t = len(scores) -> the next day)."""
+    scores = np.asarray(scores, dtype=float)
+    k = scores.shape[1]
+    if scheme not in SCHEMES:
+        raise ValueError("scheme must be equal, select or exp")
+    if not (1 <= t <= scores.shape[0]) or lookback < 1 or eta < 0.0:
+        raise ValueError("need 1 <= t <= T, lookback >= 1 and eta >= 0")
+    past = scores[max(0, t - lookback):t]
+    if scheme == "equal":
+        return np.full(k, 1.0 / k)
+    if scheme == "select":
+        w = np.zeros(k)
+        w[int(np.argmin(past.sum(axis=0)))] = 1.0
+        return w
+    s = past.sum(axis=0)
+    e = np.exp(-eta * (s - s.min()))
+    return e / e.sum()
+
+
 def combine(var, es, loss, confidence, scheme="equal", lookback=100, eta=1.0, burn=100):
     """Combined forecasts for days burn .. T-1. Returns (var (T-burn,), es (T-burn,), weights (T-burn, K))."""
     var, es, loss = (np.asarray(a, dtype=float) for a in (var, es, loss))
@@ -42,16 +62,5 @@ def combine(var, es, loss, confidence, scheme="equal", lookback=100, eta=1.0, bu
     if not (1 <= burn < t_total) or lookback < 1 or eta < 0.0:
         raise ValueError("need 1 <= burn < T, lookback >= 1 and eta >= 0")
     scores = scoring.fz0_loss(loss[:, None], var, es, confidence)
-    w = np.empty((t_total - burn, k))
-    for i, t in enumerate(range(burn, t_total)):
-        past = scores[max(0, t - lookback):t]
-        if scheme == "equal":
-            w[i] = 1.0 / k
-        elif scheme == "select":
-            w[i] = 0.0
-            w[i, int(np.argmin(past.mean(axis=0)))] = 1.0
-        else:
-            s = past.sum(axis=0)
-            e = np.exp(-eta * (s - s.min()))
-            w[i] = e / e.sum()
+    w = np.array([combination_weights(scores, t, scheme, lookback, eta) for t in range(burn, t_total)])
     return (w * var[burn:]).sum(axis=1), (w * es[burn:]).sum(axis=1), w

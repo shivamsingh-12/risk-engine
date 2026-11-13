@@ -1,0 +1,4 @@
+date,alpha_cpp,beta_cpp,alpha_py,beta_py,loglik_cpp,loglik_py,loglik_py_minus_cpp
+2023-12-15,0.017661,0.964730,0.052099,0.769052,847.559734,847.561395,1.661e-03
+next,0.017887,0.966327,0.079866,0.604118,850.603961,850.612320,8.359e-03
+#fits,503,same_optimum_within_1e-4,501,max_abs_loglik_diff_when_same,5.002e-10

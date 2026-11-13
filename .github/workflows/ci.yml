@@ -36,3 +36,22 @@ jobs:
   
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -r python_reference/requirements.txt
+
+      - name: Python tests
+        working-directory: python_reference
+        run: python -m pytest -q
+
+      #Phase 14: run the production engine in both languages on the real data and fail if they disagree
+      - name: End-to-end run, C++ vs Python
+        run: |
+          build/apps/qre_run --config configs/ci_smoke.conf --output runs/ci_cpp
+          PYTHONPATH=python_reference python -m qre.engine.run --config configs/ci_smoke.conf --output runs/ci_py
+          PYTHONPATH=python_reference python -m qre.engine.compare runs/ci_cpp runs/ci_py
