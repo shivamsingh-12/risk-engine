@@ -1,6 +1,6 @@
 segment,days,static_share_select_best,static_weight_exp_weights
-calm_1,400,0.5325,0.3698403378
-clustered_first_250,250,0.144,0.1277860097
+calm_1,400,0.5325,0.3735887392
+clustered_first_250,250,0.144,0.1277632135
 clustered_last_500,500,0.274,0.2678802129
 calm_2_first_250,250,0.18,0.1663223782
-calm_2_last_500,500,0.488,0.3746924513
+calm_2_last_500,500,0.488,0.3811687562

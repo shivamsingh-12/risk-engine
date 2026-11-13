@@ -86,6 +86,9 @@ namespace qre::risk{
         for(const auto& [a, b] : {std::pair<double, double>{xi0, std::log(beta0)}, {0.1, std::log(m)}}){
             Eigen::VectorXd x0(2);
             x0 << a, b;
+            //the moment start can lie outside the support (xi < 0 with an exceedance beyond -beta/xi): skip it,
+            //the second start (xi = 0.1 > 0) is always feasible. Found on a min-variance portfolio in Phase 15
+            if(!std::isfinite(obj(x0))) continue;
             const auto r = optimization::nelder_mead(obj, x0, 0.2, 1e-10, 1e-12, 4000);
             if(r.fx < best.fx) best = r;
         }

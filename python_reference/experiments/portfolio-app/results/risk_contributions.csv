@@ -1,0 +1,20 @@
+portfolio,ticker,weight,vol,risk_contribution
+"Equal weight, 6 stocks",AAPL,0.1666666667,0.2030015803,0.1435138584
+"Equal weight, 6 stocks",CAT,0.1666666667,0.2861082495,0.2730461983
+"Equal weight, 6 stocks",JNJ,0.1666666667,0.1654352967,0.09796720819
+"Equal weight, 6 stocks",JPM,0.1666666667,0.207452642,0.1907309966
+"Equal weight, 6 stocks",PG,0.1666666667,0.148981465,0.08069395967
+"Equal weight, 6 stocks",XOM,0.1666666667,0.2507483724,0.2140477789
+Single stock (AAPL),AAPL,1,0.2030015803,1
+"Defensive (PG, JNJ)",PG,0.5,0.148981465,0.4607404841
+"Defensive (PG, JNJ)",JNJ,0.5,0.1654352967,0.5392595159
+"Cyclical (XOM, CAT)",XOM,0.5,0.2507483724,0.4532065447
+"Cyclical (XOM, CAT)",CAT,0.5,0.2861082495,0.5467934553
+"Tech and banks (AAPL, JPM)",AAPL,0.5,0.2030015803,0.4915841446
+"Tech and banks (AAPL, JPM)",JPM,0.5,0.207452642,0.5084158554
+"Min-variance (long-only, first year)",AAPL,0.1412121683,0.2030015803,0.1314728566
+"Min-variance (long-only, first year)",CAT,0.02666923288,0.2861082495,0.02620970866
+"Min-variance (long-only, first year)",JNJ,0.298636033,0.1654352967,0.3160072615
+"Min-variance (long-only, first year)",JPM,0.147115265,0.207452642,0.1580985843
+"Min-variance (long-only, first year)",PG,0.3520280848,0.148981465,0.3413154508
+"Min-variance (long-only, first year)",XOM,0.03433921612,0.2507483724,0.0268961381

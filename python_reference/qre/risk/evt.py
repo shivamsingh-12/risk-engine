@@ -62,6 +62,8 @@ def fit_gpd(exceedances):
     beta0 = max(0.5 * m * (m * m / v + 1.0), 1e-12)
     best = None
     for x0 in ((xi0, math.log(beta0)), (0.1, math.log(m))):
+        if not math.isfinite(_gpd_nll(np.array(x0), y)):
+            continue                  # moment start outside the support; the xi = 0.1 start is always feasible
         res = minimize(_gpd_nll, np.array(x0), args=(y,), method="Nelder-Mead",
                        options={"xatol": 1e-10, "fatol": 1e-12, "maxiter": 4000})
         if best is None or res.fun < best.fun:
