@@ -78,6 +78,8 @@ def neg_loglik(theta, returns, v):
 # Upper bound on nu. The likelihood is nearly flat as nu -> infinity, and without a bound the fit can drift to
 # nu ~ 1e16, where gammaln differences lose all precision (in C++ the Student-t cdf breaks down too, giving negative
 # VaR and ES ~ 1e32). At nu = 1000 the t is the normal for risk purposes, so reaching the bound means "normal shocks".
+# nu is clamped (likelihood flat above the bound) rather than walled off with +inf, which made Nelder-Mead crawl along
+# the boundary on near-normal portfolios (Phase 15).
 NU_MAX = 1000.0
 
 
@@ -87,9 +89,7 @@ def nu_from_theta(c):
 
 def neg_loglik_t(theta, returns, v):
     alpha, beta = params_from_theta(theta[:2])
-    nu = nu_from_theta(theta[2])
-    if not nu <= NU_MAX:
-        return math.inf
+    nu = min(nu_from_theta(theta[2]), NU_MAX)        # flat beyond the bound (see NU_MAX)
     r = np.asarray(returns, dtype=float)
     h = variance_path(r, v * (1.0 - alpha - beta), alpha, beta, v)[:-1]
     const = gammaln((nu + 1.0) / 2.0) - gammaln(nu / 2.0) - 0.5 * math.log(math.pi * (nu - 2.0))
@@ -148,7 +148,7 @@ def fit_garch(returns, dist="normal"):
                 best = res
         alpha, beta = params_from_theta(best.x[:2])
         return GarchFit(v * (1.0 - alpha - beta), alpha, beta, v, -float(best.fun), bool(best.success),
-                        nu_from_theta(best.x[2]))
+                        min(nu_from_theta(best.x[2]), NU_MAX))
     best = None
     for a0, b0 in STARTS:
         res = minimize(neg_loglik, theta_from_params(a0, b0), args=(r, v), method="Nelder-Mead",
