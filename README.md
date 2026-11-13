@@ -1,7 +1,7 @@
 **Qf-risk-engine (qre)**  
 A quantitative risk engine, built with C++ 23 with Python reference implementations, meant to be a learning project that helps me learn math actively used in the financial sector, ranging from probability theory to stochastic volatility model.
 
-**Status:** early work in progress. This is not a production system – it’s meant to be built from scratch where every mathematical component is derived, implemented, and then tested.
+**Status:** Close to finishing, still keeping options open to test and try new features mathematically.
 
 **What it actually is**  
 This project differs from the quant projects I have seen by actively working in phases that are split in a specific order. Research on math topics and formulas (seen in notes/) and then a corresponding implementation in Python and C++, tested for correctness and then finally validated with a small experiment that attempts to ask a question about the method.  
