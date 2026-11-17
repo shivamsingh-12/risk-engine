@@ -9,7 +9,7 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-#only test files with content so far; add the rest as their phases get tests
+#one file per topic; every C++ module also has a Python counterpart in python_reference/tests
 add_executable(qre_tests
     test_black_scholes.cpp
     test_gbm_path.cpp
@@ -19,19 +19,19 @@ add_executable(qre_tests
     test_ewma.cpp
     test_garch.cpp
     test_student_t.cpp
-    test_phase8.cpp
+    test_stochastic_processes.cpp
     test_heston.cpp
-    test_phase10.cpp
-    test_phase11.cpp
-    test_phase12.cpp
-    test_phase13.cpp
-    test_phase14.cpp
-    test_phase15.cpp
-    test_phase16.cpp
-    test_phase17.cpp
-    test_phase18.cpp
+    test_shrinkage.cpp
+    test_evt.cpp
+    test_advanced_mc.cpp
+    test_adaptive.cpp
+    test_engine.cpp
+    test_regressions.cpp
+    test_credit.cpp
+    test_deep_hedging.cpp
+    test_execution.cpp
 )
-target_link_libraries(qre_tests PRIVATE qre GTest::gtest_main)
+target_link_libraries(qre_tests PRIVATE qre qre_warnings GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(qre_tests)

@@ -4,8 +4,8 @@ From the repo root, after building (`cmake -B build -S cpp && cmake --build buil
 
     build/apps/qre_run --config configs/daily_risk.conf             # C++, all cores
     build/apps/qre_run --config configs/daily_risk.conf --threads 1 # same numbers, one thread
-    PYTHONPATH=python_reference python -m qre.engine.run --config configs/daily_risk.conf --workers 4
-    PYTHONPATH=python_reference python -m qre.engine.compare runs/daily runs/daily_py   # compare two reports
+    python -m qre.engine.run --config configs/daily_risk.conf --workers 4
+    python -m qre.engine.compare runs/daily runs/daily_py   # compare two reports
 
 Configs are `key = value` lines (see cpp/include/qre/engine/config.hpp for every key). Unknown keys and bad values
 stop the run with the line number. Each run writes to `output`:

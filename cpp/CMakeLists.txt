@@ -33,36 +33,36 @@ if(NOT Eigen3_FOUND)
     FetchContent_MakeAvailable(Eigen3)
 endif()
 
-#library
-add_library(qre
-  src/core/placeholder.cpp
-  src/linalg/placeholder.cpp
-  src/montecarlo/placeholder.cpp
-  src/optimization/placeholder.cpp
-  src/pricing/placeholder.cpp
-  src/risk/placeholder.cpp
-  src/stats/placeholder.cpp
-)
+#library: header-only, so an INTERFACE target that carries the include path and Eigen
+add_library(qre INTERFACE)
 target_include_directories(qre
-  PUBLIC
+  INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
- 
-target_link_libraries(qre PUBLIC Eigen3::Eigen)
-#warnings - warnings every build, but sanitizers only for CI runs
+target_link_libraries(qre INTERFACE Eigen3::Eigen)
+target_compile_features(qre INTERFACE cxx_std_23)
 
+#strict warnings for our own executables (tests, apps, experiments); link qre_warnings to opt in
+add_library(qre_warnings INTERFACE)
 if(QRE_ENABLE_WARNINGS)
-  target_compile_options(qre PRIVATE
+  target_compile_options(qre_warnings INTERFACE
     -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion
   )
 endif()
 
-#sanitizer section
-#cmake -B build-asan -DQRE_ENABLE_SANITIZERS=ON -DCMAKE_BUILD_TYPE=Debug
+#sanitizers (CI runs a Debug build with these):
+#cmake -B build-asan -S cpp -DQRE_ENABLE_SANITIZERS=ON -DCMAKE_BUILD_TYPE=Debug
 if(QRE_ENABLE_SANITIZERS)
-  target_compile_options(qre PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
-  target_link_options(qre PUBLIC -fsanitize=address,undefined)
+  target_compile_options(qre INTERFACE -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined)
+  target_link_options(qre INTERFACE -fsanitize=address,undefined)
+endif()
+
+#coverage (CI): cmake -B build-cov -S cpp -DQRE_ENABLE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Debug
+option(QRE_ENABLE_COVERAGE "Instrument for gcov/llvm-cov coverage" OFF)
+if(QRE_ENABLE_COVERAGE)
+  target_compile_options(qre INTERFACE --coverage -O0)
+  target_link_options(qre INTERFACE --coverage)
 endif()
 
 #subdirectories

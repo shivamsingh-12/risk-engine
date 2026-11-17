@@ -1,3 +1,5 @@
+#Original download of the bundled six-stock file (data/market_data/adjusted_close.csv). Run from the repo root.
+#tools/fetch_data.py downloads the larger data sets used from Phase 20 on.
 #Pulls daily adjusted prices for small basket of tickers, saves as CSV
 import yfinance as yf
 import pandas as pd
