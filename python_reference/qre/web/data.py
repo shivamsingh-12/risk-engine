@@ -26,6 +26,9 @@ TICKER_RE = re.compile(r"^\^?[A-Z0-9][A-Z0-9.\-=]{0,14}$")    # e.g. AAPL, BRK-B
 MAX_TICKERS = 25
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 BUNDLED = os.path.join(REPO_ROOT, "data", "market_data", "adjusted_close.csv")
+LONG_HISTORY = os.path.join(REPO_ROOT, "data", "market_data", "long_history_close.csv")
+STRESS_START = "2007-01-01"           # far enough back for every built-in scenario (the first starts 2007-10-09)
+NEW_YORK = "America/New_York"
 
 
 class DataError(ValueError):
@@ -84,6 +87,81 @@ def bundled_fetcher(tickers, start, end):
     return [table.dates[i] for i in keep], list(tickers), table.prices[np.ix_(keep, cols)]
 
 
+def long_history_fetcher(tickers, start, end):
+    """The stored 2005-onward history (about 50 large stocks, ETFs and indices; tools/fetch_data.py). Offline."""
+    if not os.path.exists(LONG_HISTORY):
+        raise DataError("the stored long price history is missing; run  python3 tools/fetch_data.py  or switch the "
+                        "data source to Yahoo Finance")
+    table = hd.load_price_csv(LONG_HISTORY)
+    missing = [t for t in tickers if t not in table.tickers]
+    if missing:
+        raise DataError(f"{', '.join(missing)} not in the stored history; switch the data source to Yahoo Finance")
+    keep = [i for i, d in enumerate(table.dates) if start <= d < end]
+    cols = [table.tickers.index(t) for t in tickers]
+    return [table.dates[i] for i in keep], list(tickers), table.prices[np.ix_(keep, cols)]
+
+
+def yfinance_quotes(tickers):
+    """Latest intraday price per ticker from 1-minute bars: {ticker: (price, 'YYYY-MM-DD HH:MM' New York time)}.
+    Tickers with no bar today are left out."""
+    try:
+        import yfinance as yf
+    except ImportError as e:
+        raise DataError("yfinance is not installed: run  pip install yfinance") from e
+    raw = yf.download(tickers, period="1d", interval="1m", auto_adjust=True, progress=False, threads=True,
+                      group_by="column", prepost=False)
+    out = {}
+    if raw is None or len(raw) == 0:
+        return out
+    close = raw["Close"] if "Close" in raw.columns.get_level_values(0) else raw
+    if not hasattr(close, "columns"):
+        close = close.to_frame(name=tickers[0])
+    for t in tickers:
+        if t in [str(c) for c in close.columns]:
+            col = close[t].dropna()
+            if len(col):
+                ts = col.index[-1]
+                ts = ts.tz_convert(NEW_YORK) if getattr(ts, "tzinfo", None) else ts
+                out[t] = (float(col.iloc[-1]), ts.strftime("%Y-%m-%d %H:%M"))
+    return out
+
+
+def new_york_now():
+    from zoneinfo import ZoneInfo
+    return dt.datetime.now(ZoneInfo(NEW_YORK))
+
+
+def market_open(now):
+    """Regular US equity session, Monday to Friday 9:30 to 16:00 New York time (exchange holidays not checked)."""
+    return now.weekday() < 5 and dt.time(9, 30) <= now.time() < dt.time(16, 0)
+
+
+def apply_live(dates, tickers, prices, quotes, today):
+    """Add or update today's provisional row from intraday quotes. Returns (dates, prices, info).
+
+    Yahoo's daily data usually already holds today's bar during the session; the quotes then only refresh it.
+    A new row is added only when every ticker has a quote stamped today, so a partial or stale set of quotes
+    never becomes a price."""
+    prices = np.asarray(prices, dtype=float).copy()
+    dates = list(dates)
+    today_s = today.isoformat()
+    fresh = {t: q for t, q in quotes.items() if q[1][:10] == today_s and math.isfinite(q[0]) and q[0] > 0}
+    info = {"date": today_s, "quotes": len(fresh), "asof": max((q[1] for q in fresh.values()), default=None),
+            "action": "none"}
+    if not fresh:
+        return dates, prices, info
+    row = np.array([fresh[t][0] if t in fresh else np.nan for t in tickers])
+    if dates and dates[-1] == today_s:
+        have = np.isfinite(row)
+        prices[-1, have] = row[have]
+        info["action"] = "updated"
+    elif len(fresh) == len(tickers) and (not dates or dates[-1] < today_s):
+        dates.append(today_s)
+        prices = np.vstack([prices, row])
+        info["action"] = "added"
+    return dates, prices, info
+
+
 def bundled_last_date():
     with open(BUNDLED) as fh:
         last = fh.read().strip().splitlines()[-1]
@@ -102,10 +180,11 @@ class PriceCache:
         key = hashlib.sha1(f"{source}|{','.join(tickers)}|{start}|{end}".encode()).hexdigest()[:16]
         return os.path.join(self.dir, f"{source}_{key}.csv")
 
-    def get(self, source, tickers, start, end, fetcher, now=None):
+    def get(self, source, tickers, start, end, fetcher, now=None, refresh=False):
+        """refresh=True ignores a cached copy and downloads again (the Refresh button and live mode)."""
         p = self.path(source, tickers, start, end)
         now = dt.datetime.now().timestamp() if now is None else now
-        if os.path.exists(p) and now - os.path.getmtime(p) < self.max_age:
+        if not refresh and os.path.exists(p) and now - os.path.getmtime(p) < self.max_age:
             t = hd.load_price_csv(p)
             return t.dates, t.tickers, t.prices, True
         dates, ticks, prices = fetcher(tickers, start, end)

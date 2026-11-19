@@ -30,6 +30,7 @@ add_executable(qre_tests
     test_credit.cpp
     test_deep_hedging.cpp
     test_execution.cpp
+    test_stress.cpp
 )
 target_link_libraries(qre_tests PRIVATE qre qre_warnings GTest::gtest_main)
 

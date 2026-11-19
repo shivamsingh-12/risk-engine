@@ -30,5 +30,6 @@ One folder per experiment, each with its code, a `results/` folder of CSV files 
 | 22 | Deep hedging | deep-hedging | cpp |
 | 23 | Optimal execution (Almgren-Chriss) | execution | cpp |
 | 24 | Benchmarks: where the time goes | cpp/benchmarks (write-up in docs/benchmarks.md) | cpp |
+| 25 | Stress testing: past crises, VaR in a crisis, conditional shocks, proxies | stress | cpp |
 
 Every experiment is its own executable, built into `build/experiments/`. Run one from the repo root and it rewrites its `results/` folder. `docs/research_questions.md` lists the question each one asks and the short answer.

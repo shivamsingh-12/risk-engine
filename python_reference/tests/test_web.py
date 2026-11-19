@@ -233,3 +233,113 @@ def test_garch_t_nu_is_clamped_not_walled():
     fit = garch.fit_garch(r, "t")
     assert fit.nu == garch.NU_MAX
     assert np.isfinite(garch.neg_loglik_t(np.array([0.0, 0.0, 50.0]), r, float(np.mean(r * r))))
+
+
+# ---------------------------------------------------------------- Phase 20: refresh, live mode, stress tests
+def test_price_cache_refresh_downloads_again(tmp_path):
+    calls = []
+
+    def counting(tickers, start, end):
+        calls.append(1)
+        return fake_fetcher(tickers, start, end)
+    cache = data.PriceCache(str(tmp_path))
+    assert cache.get("f", ["A"], "2019-01-01", "2020-01-01", counting)[3] is False
+    assert cache.get("f", ["A"], "2019-01-01", "2020-01-01", counting)[3] is True
+    assert cache.get("f", ["A"], "2019-01-01", "2020-01-01", counting, refresh=True)[3] is False
+    assert len(calls) == 2
+
+
+def test_market_open_hours():
+    import datetime as dt
+    assert data.market_open(dt.datetime(2026, 11, 18, 9, 30))           # Wednesday
+    assert not data.market_open(dt.datetime(2026, 11, 18, 9, 29))
+    assert not data.market_open(dt.datetime(2026, 11, 18, 16, 0))
+    assert not data.market_open(dt.datetime(2026, 11, 21, 12, 0))       # Saturday
+
+
+def test_apply_live_adds_updates_and_refuses_partial_or_stale_quotes():
+    import datetime as dt
+    today = dt.date(2026, 11, 18)
+    dates = ["2026-11-16", "2026-11-17"]
+    p = np.array([[10.0, 20.0], [11.0, 21.0]])
+    d, q, info = data.apply_live(dates, ["A", "B"], p, {"A": (12.0, "2026-11-18 10:15"),
+                                                        "B": (19.0, "2026-11-18 10:14")}, today)
+    assert d[-1] == "2026-11-18" and q[-1].tolist() == [12.0, 19.0] and info["action"] == "added"
+    assert info["asof"] == "2026-11-18 10:15" and p.shape == (2, 2)     # input untouched
+    d2, q2, info2 = data.apply_live(d, ["A", "B"], q, {"A": (12.5, "2026-11-18 10:20")}, today)
+    assert len(d2) == 3 and q2[-1].tolist() == [12.5, 19.0] and info2["action"] == "updated"
+    d3, _, info3 = data.apply_live(dates, ["A", "B"], p, {"A": (12.0, "2026-11-18 10:15")}, today)
+    assert len(d3) == 2 and info3["action"] == "none"                  # partial set: no new row
+    d4, _, info4 = data.apply_live(dates, ["A", "B"], p, {"A": (12.0, "2026-11-17 15:59"),
+                                                          "B": (19.0, "2026-11-17 15:59")}, today)
+    assert len(d4) == 2 and info4["quotes"] == 0                       # yesterday's quotes are not today's prices
+
+
+def test_live_analyze_adds_a_provisional_row(tmp_path, python_engine):
+    import datetime as dt
+    last = fake_fetcher(["A"], "", "")[0][-1]
+    today = dt.date.fromisoformat(last) + dt.timedelta(days=1)
+    while today.weekday() >= 5:
+        today += dt.timedelta(days=1)
+    now = dt.datetime.combine(today, dt.time(11, 0))
+    quotes = lambda ts: {t: (100.0, f"{today} 10:59") for t in ts}       # noqa: E731
+    app = server.App(str(tmp_path), fetchers={"fake": fake_fetcher}, quotes=quotes, clock=lambda: now)
+    r = app.analyze(_request(live=True))
+    assert r["data"]["end"] == today.isoformat() and r["data"]["rows"] == 521
+    assert r["live"]["market_open"] and r["live"]["provisional"] and r["live"]["action"] == "added"
+    assert r["latest"]["date"] == today.isoformat()
+    closed = server.App(str(tmp_path), fetchers={"fake": fake_fetcher}, quotes=quotes,
+                        clock=lambda: now.replace(hour=18)).analyze(_request(live=True))
+    assert not closed["live"]["market_open"] and not closed["live"]["provisional"] and closed["data"]["rows"] == 520
+    with pytest.raises(data.DataError, match="live mode"):
+        server.App(str(tmp_path)).analyze(_request(source="bundled", live=True))
+
+
+def _long_history(tickers, start, end):
+    """Business days 2006 to 2026, every ticker a GBM correlated with the first column; LATE lists in 2021."""
+    days = np.arange(np.datetime64("2006-01-02"), np.datetime64("2026-11-14"))
+    days = [d for d in days if np.is_busday(d)]
+    rng = np.random.default_rng(7)
+    m = 0.0002 + 0.012 * rng.standard_normal(len(days) - 1)
+    cols = []
+    for j, t in enumerate(tickers):
+        b = 1.0 if t == "SPY" else 0.5 + 0.3 * j
+        r = b * m + (0.0 if t == "SPY" else 0.008) * rng.standard_normal(len(days) - 1)     # SPY is the market
+        p = 100.0 * np.concatenate([[1.0], np.cumprod(1.0 + r)])
+        if t == "LATE":
+            p[: days.index(np.datetime64("2021-01-04"))] = np.nan
+        cols.append(p)
+    dates = [str(d) for d in days]
+    keep = [i for i, d in enumerate(dates) if start <= d < end]
+    return [dates[i] for i in keep], list(tickers), np.column_stack(cols)[keep]
+
+
+def test_app_stress_end_to_end(tmp_path):
+    app = server.App(str(tmp_path), fetchers={"fake": fake_fetcher, "stored": _long_history})
+    r = app.stress({"holdings": [{"ticker": "AAA", "weight": 3}, {"ticker": "LATE", "weight": 1}], "value": 1e6,
+                    "source": "bundled", "shocks": [{"ticker": "SPY", "shock": -0.2}], "horizon_days": 10,
+                    "reverse_loss": 0.1})
+    assert json.dumps(r)
+    sc = {s["key"]: s for s in r["scenarios"]}
+    assert all(s["available"] for s in r["scenarios"])
+    assert sc["gfc"]["proxied"] == ["LATE"] and sc["rates_2022"]["proxied"] == []
+    assert sc["covid"]["pnl"] == pytest.approx(sc["covid"]["total_return"] * 1e6)
+    assert sum(h["contribution"] for h in sc["covid"]["holdings"]) == pytest.approx(sc["covid"]["total_return"])
+    assert r["betas"]["AAA"] == pytest.approx(0.5, abs=0.05) and r["betas"]["LATE"] == pytest.approx(0.8, abs=0.1)
+    sh = r["shock"]
+    assert sh["expected_return"] == pytest.approx(0.75 * 0.5 * -0.2 + 0.25 * 0.8 * -0.2, abs=0.01)
+    assert sh["loss_at_confidence"] > -sh["expected_return"] > 0
+    assert r["reverse"]["market_return"] == pytest.approx(-0.1 / r["portfolio_beta"])
+    assert r["data"]["cov_days"] == 500
+    for bad, msg in (({"shocks": [{"ticker": "SPY", "shock": -1.5}]}, "between -100%"),
+                     ({"shocks": [{"ticker": "SPY", "shock": -0.1}, {"ticker": "SPY", "shock": -0.2}]}, "twice"),
+                     ({"horizon_days": 0}, "horizon"), ({"reverse_loss": 1.5}, "reverse")):
+        with pytest.raises(data.DataError, match=msg):
+            app.stress({"holdings": [{"ticker": "AAA", "weight": 1}], "source": "bundled", **bad})
+
+
+def test_forward_fill_keeps_leading_gaps():
+    from qre.web import stress as ws
+    p = np.array([[np.nan, 1.0], [2.0, np.nan], [np.nan, 3.0], [4.0, 4.0]])
+    f = ws.forward_fill_gaps(p)
+    assert np.isnan(f[0, 0]) and f[2, 0] == 2.0 and f[1, 1] == 1.0

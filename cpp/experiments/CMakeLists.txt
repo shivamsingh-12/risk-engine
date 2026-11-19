@@ -200,3 +200,6 @@ target_link_libraries(execution_experiment
 )
 
 #Extra add_executable for new experiment
+#Experiment 25 (Phase 20): stress testing
+add_executable(stress_experiment stress/stress_experiment.cpp)
+target_link_libraries(stress_experiment PRIVATE qre)
