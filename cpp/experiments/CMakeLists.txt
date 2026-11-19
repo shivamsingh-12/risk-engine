@@ -1,3 +1,6 @@
+#every experiment builds with the strict warnings
+link_libraries(qre_warnings)
+
 add_executable(convergence_probability
     01-probability/convergence.cpp
 )

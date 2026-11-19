@@ -2,7 +2,7 @@
 
 qre is a C++23 risk engine with a Python reference implementation of every model. I built it as a learning project, to learn the math used in finance by implementing it from first principles: from probability and linear algebra through option pricing, stochastic volatility, tail risk and credit, to hedging and trade execution.
 
-**Status:** all 18 planned phases are done. The engine prices derivatives, simulates portfolios, forecasts and backtests risk across ten models, and runs as a command-line tool and as a local web app. I'm keeping it open for new topics.
+**Status:** the 18 phases of the original plan are done. The engine prices derivatives, simulates portfolios, forecasts and backtests risk across ten models, and runs as a command-line tool and as a local web app. Phase 19 onward extends it.
 
 **How it was built**  
 Every phase follows the same order:
@@ -35,13 +35,15 @@ The experiment write-ups (in `cpp/experiments/` and `python_reference/experiment
 
     cmake -B build -S cpp -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
     ctest --test-dir build                                    # C++ tests
+
+    python3 -m venv .venv && source .venv/bin/activate
+    pip install -e "python_reference[test,web]"               # the Python package, pytest and yfinance
     (cd python_reference && python -m pytest -q)              # Python tests
 
     build/apps/qre_run --config configs/daily_risk.conf       # daily risk report -> runs/daily/report.md
-    pip install yfinance                                      # optional, for live prices in the app
-    PYTHONPATH=python_reference python -m qre.web --open      # portfolio risk app at http://127.0.0.1:8000
+    qre-web --open                                            # portfolio risk app at http://127.0.0.1:8000
 
-`configs/README.md` documents the run configuration, and `python_reference/qre/web/README.md` the app. On macOS, if the Apple compiler is too old for C++23, configure with `-DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++`.
+Run these from the repo root. `configs/README.md` documents the run configuration, `python_reference/qre/web/README.md` the app, and `docs/architecture.md` how the pieces fit together. On macOS, if the Apple compiler is too old for C++23, configure with `-DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++`.
 
 **Roadmap**
 
@@ -69,6 +71,7 @@ The experiment write-ups (in `cpp/experiments/` and `python_reference/experiment
 | 16 | Merton credit model | 21: spreads, first passage and asset estimation | Done |
 | 17 | Deep hedging | 22: neural hedging with costs and stochastic volatility | Done |
 | 18 | Optimal execution | 23: Almgren-Chriss trade-offs | Done |
+| 19 | Tooling: packaging, CI on two platforms, sanitizers, benchmarks | 24: where the time goes | Done |
 
 Two changes from the original plan:
 - **Data layer.** I hadn't planned a data layer, but by Phase 7 it was clear it was needed before going further. Real prices have gaps, stale quotes, bad prints and splits, and every later result depends on catching them.
@@ -88,7 +91,7 @@ Two changes from the original plan:
   - a GPD fit started outside its support
 
 **Why Python and C++?**  
-Python is for prototyping algorithms and checking closed forms; C++23 is for performance. Every C++ module is checked against its Python counterpart before I treat it as correct, which separates language-level bugs from mathematical errors. CI builds and tests both on every push to main, and also runs a daily risk report through both engines on the real data, failing if they disagree beyond 10⁻⁹.
+Python is for prototyping algorithms and checking closed forms; C++23 is for performance. Every C++ module is checked against its Python counterpart before I treat it as correct, which separates language-level bugs from mathematical errors. CI builds and tests both on Linux and macOS on every push to main, runs the C++ tests again under address and undefined-behavior sanitizers, and runs a daily risk report through both engines on the real data, failing if they disagree beyond 10⁻⁹.
 
 **Repository layout**
 
@@ -96,8 +99,11 @@ Python is for prototyping algorithms and checking closed forms; C++23 is for per
 | :---- | :---- |
 | cpp/include/qre/ | the engine (header-only): core, data, distributions, linalg, pricing, montecarlo, models, risk, stats, credit, hedging, execution, engine |
 | cpp/apps/ | qre_run |
-| cpp/tests/, python_reference/tests/ | GoogleTest and pytest suites |
+| cpp/tests/, python_reference/tests/ | GoogleTest and pytest suites, one file per topic |
+| cpp/benchmarks/ | Google Benchmark suite (results in docs/benchmarks.md) |
 | cpp/experiments/, python_reference/experiments/ | one folder per experiment: code, results (CSV) and write-up |
 | python_reference/qre/ | Python reference implementations, the Python engine and the web app |
 | configs/ | run configurations for qre_run and the app |
 | data/ | the bundled daily prices (six large US stocks, 2021 to 2023) |
+| docs/ | architecture, the research question behind each experiment, benchmarks, my progress log |
+| tools/ | data download scripts |

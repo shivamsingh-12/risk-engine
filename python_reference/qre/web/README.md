@@ -7,7 +7,7 @@ each holding's share of the risk, correlations, drawdowns and how the forecasts 
 **Run it** (from the repo root, after building the C++ engine with `cmake --build build`):
 
     pip install yfinance                        # once, for live prices; the bundled six stocks work without it
-    PYTHONPATH=python_reference python -m qre.web --open
+    python -m qre.web --open
 
 The page opens at http://127.0.0.1:8000/. Options: `--port`, `--qre-run PATH` (default `build/apps/qre_run`),
 `--cache-dir DIR` (default `runs/cache`). Without a built `qre_run` it falls back to the Python engine, which is

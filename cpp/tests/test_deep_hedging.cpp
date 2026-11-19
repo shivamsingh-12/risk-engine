@@ -7,7 +7,7 @@ using namespace qre::hedging;
 
 namespace {
 const double kT = 30.0 / 252.0;
-//Same deterministic weights and paths as python_reference/tests/test_phase17.py
+//Same deterministic weights and paths as python_reference/tests/test_deep_hedging.py
 Policy deterministic_policy(Eigen::Index n_in, Eigen::Index hidden){
     auto w = [](Eigen::Index a, Eigen::Index b, double s){
         Matrix m(a, b);

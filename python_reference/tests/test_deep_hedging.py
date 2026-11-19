@@ -42,7 +42,7 @@ def test_gradient_matches_finite_differences():
 
 
 def test_cross_language_reference_values():
-    """Printed values are hard-coded in cpp/tests/test_phase17.cpp."""
+    """Printed values are hard-coded in cpp/tests/test_deep_hedging.cpp."""
     S, v = deterministic_paths(6, 5, True)
     p = deterministic_policy(4, 5)
     J, g, L = dh.objective_and_grad(p, S, 100.0, T, 0.002, 0.7, v)

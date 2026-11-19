@@ -1,5 +1,17 @@
 .DS_Store
-build/
 **/.DS_Store
 
+#builds and run outputs
+build/
+build-*/
 runs/
+
+#Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+#local scratch
+Claude outputs/

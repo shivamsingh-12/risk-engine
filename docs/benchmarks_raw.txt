@@ -1,0 +1,41 @@
+build/benchmarks/qre_bench --benchmark_min_time=0.3s
+Run on (2 X 2100 MHz CPU s), Intel(R) Xeon(R) Processor @ 2.10GHz, GCC 13.3, Release build
+---------------------------------------------------------------------------------------------------
+Benchmark                                         Time             CPU   Iterations UserCounters...
+---------------------------------------------------------------------------------------------------
+BM_BlackScholesPrice                           25.6 ns         25.5 ns     18185888 items_per_second=39.2129M/s
+BM_ImpliedVol                                   421 ns          419 ns       998714 items_per_second=2.38556M/s
+BM_McEuropean/10000                           0.355 ms        0.345 ms         1185 items_per_second=29.0016M/s
+BM_McEuropean/100000                           3.20 ms         3.20 ms          100 items_per_second=31.215M/s
+BM_McEuropean/1000000                          37.2 ms         36.8 ms            9 items_per_second=27.1547M/s
+BM_SobolNormals/1                             0.565 ms        0.559 ms          798 items_per_second=29.3338M/s
+BM_SobolNormals/16                             10.7 ms         10.7 ms           37 items_per_second=24.5259M/s
+BM_SobolNormals/64                             41.1 ms         41.0 ms           11 items_per_second=25.5863M/s
+BM_BasketPrice/10                             0.323 ms        0.321 ms         1324
+BM_BasketPrice/50                              2.27 ms         2.25 ms          214
+BM_BasketPrice/100                             6.49 ms         6.48 ms           56
+BM_BasketGreeksAad/10                         0.879 ms        0.877 ms          466
+BM_BasketGreeksAad/50                          5.40 ms         5.33 ms           95
+BM_BasketGreeksAad/100                         10.5 ms         10.5 ms           37
+BM_BasketGreeksPathwise/10                    0.448 ms        0.447 ms         1120
+BM_BasketGreeksPathwise/50                     2.21 ms         2.18 ms          181
+BM_BasketGreeksPathwise/100                    7.54 ms         7.26 ms           58
+BM_BasketGreeksBump/10                         19.1 ms         19.1 ms           24
+BM_BasketGreeksBump/50                          406 ms          405 ms            1
+BM_BasketGreeksBump/100                        2769 ms         2753 ms            1
+BM_SampleCov/10                                14.8 us         14.6 us        29252
+BM_SampleCov/50                                 199 us          198 us         1850
+BM_SampleCov/200                               3105 us         3103 us          135
+BM_LedoitWolf/10                               43.8 us         43.8 us         9700
+BM_LedoitWolf/50                                747 us          746 us          549
+BM_LedoitWolf/200                             11577 us        11559 us           36
+BM_RmtClip/10                                  15.4 us         15.4 us        27472
+BM_RmtClip/50                                   411 us          410 us         1232
+BM_RmtClip/200                                 9489 us         9486 us           43
+BM_HistoricalVarEs                             1.69 us         1.68 us       245394
+BM_GarchFit                                   0.793 ms        0.775 ms          622
+BM_GarchTFit                                   4.10 ms         4.07 ms          102
+BM_DailyRiskRun/1/iterations:1/real_time      13544 ms        13479 ms            1
+BM_DailyRiskRun/2/iterations:1/real_time       6885 ms         6804 ms            1
+BM_DailyRiskRun/4/iterations:1/real_time       6842 ms         3385 ms            1
+BM_DailyRiskRun/8/iterations:1/real_time       7033 ms         1721 ms            1

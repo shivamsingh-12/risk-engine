@@ -1,7 +1,3 @@
-#inital file had wrong indentation -> error
-#note:check Ubuntu's package repo
-    #qre build benchmarks off too save CPU performance  
-#
 name: CI
 
 on:
@@ -10,31 +6,48 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  #Build, both test suites and the C++ vs Python end-to-end check, on Linux (GCC) and macOS (Clang)
   build-and-test:
-    runs-on: ubuntu-latest
+    name: build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-   
-      - name: Install dependencies
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++-13 libeigen3-dev
-  
+          sudo apt-get install -y cmake ninja-build g++-13 libeigen3-dev
+          echo "CXX=g++-13" >> "$GITHUB_ENV"
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm eigen ninja
+          echo "CXX=$(brew --prefix llvm)/bin/clang++" >> "$GITHUB_ENV"
+
       - name: Configure
         run: >
-          cmake -B build -S cpp
-          -DCMAKE_CXX_COMPILER=g++-13
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DQRE_BUILD_TESTS=ON 
+          cmake -G Ninja -B build -S cpp
+          -DCMAKE_BUILD_TYPE=Release
+          -DQRE_BUILD_TESTS=ON
           -DQRE_BUILD_BENCHMARKS=OFF
- 
+
       - name: Build
         run: cmake --build build --parallel
-  
-      - name: Test
+
+      - name: C++ tests
         run: ctest --test-dir build --output-on-failure
 
       - name: Set up Python
@@ -42,8 +55,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Python dependencies
-        run: pip install -r python_reference/requirements.txt
+      - name: Install the Python package
+        run: pip install -e "python_reference[test]"
 
       - name: Python tests
         working-directory: python_reference
@@ -53,5 +66,64 @@ jobs:
       - name: End-to-end run, C++ vs Python
         run: |
           build/apps/qre_run --config configs/ci_smoke.conf --output runs/ci_cpp
-          PYTHONPATH=python_reference python -m qre.engine.run --config configs/ci_smoke.conf --output runs/ci_py
-          PYTHONPATH=python_reference python -m qre.engine.compare runs/ci_cpp runs/ci_py
+          python -m qre.engine.run --config configs/ci_smoke.conf --output runs/ci_py
+          python -m qre.engine.compare runs/ci_cpp runs/ci_py
+
+  #The C++ tests again under AddressSanitizer and UndefinedBehaviorSanitizer
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++-13 libeigen3-dev
+      - name: Configure
+        run: >
+          cmake -G Ninja -B build-asan -S cpp
+          -DCMAKE_CXX_COMPILER=g++-13
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DQRE_ENABLE_SANITIZERS=ON
+          -DQRE_BUILD_EXPERIMENTS=OFF
+      - name: Build
+        run: cmake --build build-asan --parallel
+      - name: Test
+        run: ctest --test-dir build-asan --output-on-failure
+
+  #Line coverage of the C++ headers by the C++ tests, and of the Python package by the Python tests.
+  #The numbers go to the job summary; the HTML report is an artifact.
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++-13 libeigen3-dev
+          pip install gcovr pytest-cov
+          pip install -e "python_reference[test]"
+      - name: Build with coverage
+        run: |
+          cmake -G Ninja -B build-cov -S cpp -DCMAKE_CXX_COMPILER=g++-13 -DCMAKE_BUILD_TYPE=Debug -DQRE_ENABLE_COVERAGE=ON -DQRE_BUILD_EXPERIMENTS=OFF
+          cmake --build build-cov --parallel
+      - name: C++ tests
+        run: ctest --test-dir build-cov --output-on-failure
+      - name: C++ coverage report
+        run: |
+          mkdir -p coverage
+          gcovr --root . --filter cpp/include/qre --gcov-executable gcov-13 --gcov-ignore-parse-errors=negative_hits.warn_once_per_file --txt coverage/cpp.txt --html-details coverage/cpp.html --xml coverage/cpp.xml build-cov
+          { echo '### C++ coverage (cpp/include/qre)'; echo '```'; tail -n 4 coverage/cpp.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Python coverage report
+        working-directory: python_reference
+        run: |
+          python -m pytest -q --cov=qre --cov-report=term --cov-report=xml:../coverage/python.xml | tee ../coverage/python.txt
+          { echo '### Python coverage (qre)'; echo '```'; grep -E '^TOTAL' ../coverage/python.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+      #For a coverage badge: sign in to codecov.io with GitHub, add the repo, then uncomment this step.
+      #Public repos need no token.
+      # - uses: codecov/codecov-action@v4
+      #   with:
+      #     files: coverage/cpp.xml,coverage/python.xml
