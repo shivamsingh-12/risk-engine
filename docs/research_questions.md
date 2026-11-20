@@ -30,12 +30,12 @@ Each experiment asks one question. This file lists them with the short answer an
 | 22 | Can a neural network hedge better than Black-Scholes delta? | Yes, once trading costs or stochastic volatility matter | deep-hedging |
 | 23 | How should a large order be sold? | Front-loaded, and faster the more volatile the stock | execution |
 | 24 | What does each operation cost, and what dominates a risk run? | GARCH fits; AAD gives 202 Greeks for 1.6 prices | docs/benchmarks.md |
+| 25 | What would past crises do to a portfolio today, and do VaR models cover crisis days? | Losses of 2 to 55% against one-day VaR of 1.4 to 3.8%; volatility-scaled models breach 2.5 to 3.7% of crisis days, not 1% | stress |
 
 **Open questions**
 
 These are not answered yet. Phases 20 onward take up several of them.
 
-- How would today's portfolio have done in 2008, March 2020 or 2022, and do the VaR models cover those losses?
 - How do the risk models behave on portfolios with options, where losses are not linear in returns?
 - Does Heston calibrate to a real option surface as well as it does to its own synthetic prices?
 - How much of a stock portfolio's risk is market beta, and how much is specific to the stocks?

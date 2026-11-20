@@ -1,10 +1,14 @@
 // Phase 15: front end of the portfolio risk app. React 18 + htm (JSX-like templates without a build step).
-// Talks to the local server: GET /api/status, GET /api/examples, POST /api/analyze.
+// Talks to the local server: GET /api/status, GET /api/examples, POST /api/analyze, POST /api/stress (Phase 20).
+// Phase 20 adds the Refresh button, live mode (re-run every minute while the market is open) and stress tests.
 const { useState, useEffect, useMemo, useRef } = React;
 const html = htm.bind(React.createElement);
 
 const pct = (x, d = 2) => (x == null || !isFinite(x) ? "–" : (100 * x).toFixed(d) + "%");
 const num = (x, d = 2) => (x == null || !isFinite(x) ? "–" : x.toFixed(d));
+const signed = (x, d = 2) => (x == null || !isFinite(x) ? "–" : (x > 0 ? "+" : "") + (100 * x).toFixed(d) + "%");
+const tone = (x) => (x == null || !isFinite(x) || x === 0 ? "" : x > 0 ? "pos" : "neg");
+const LIVE_EVERY_MS = 60000;
 const money = (x) => (x == null || !isFinite(x) ? "–" : x.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 }));
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const MODEL_LABEL = { historical: "Historical", parametric: "Parametric (normal)", ewma: "EWMA", fhs: "Filtered historical",
@@ -94,7 +98,7 @@ function Heatmap({ tickers, corr }) {
 }
 
 // ------------------------------------------------------------------ inputs
-function PortfolioForm({ status, examples, onRun, busy }) {
+function PortfolioForm({ status, examples, onRun, busy, live, setLive }) {
   const [holdings, setHoldings] = useState([{ ticker: "AAPL", weight: 1 }, { ticker: "JPM", weight: 1 }, { ticker: "XOM", weight: 1 }]);
   const [source, setSource] = useState("bundled");
   const [years, setYears] = useState(3);
@@ -110,12 +114,13 @@ function PortfolioForm({ status, examples, onRun, busy }) {
     const ex = examples.find((e) => e.name === name);
     if (ex) { setHoldings(ex.holdings.map((h) => ({ ...h }))); setSource(ex.source); }
   };
-  const submit = (e) => {
-    e.preventDefault();
+  const request = () => {
     const confidence = Object.keys(conf).filter((k) => conf[k]).map(Number).sort((a, b) => b - a);
-    onRun({ holdings: holdings.filter((h) => h.ticker.trim()).map((h) => ({ ticker: h.ticker.trim(), weight: parseFloat(h.weight) || 0 })),
-      source, years: Number(years), value: Number(value), confidence, models: modelSet, combination });
+    return { holdings: holdings.filter((h) => h.ticker.trim()).map((h) => ({ ticker: h.ticker.trim(), weight: parseFloat(h.weight) || 0 })),
+      source, years: Number(years), value: Number(value), confidence, models: modelSet, combination };
   };
+  const submit = (e) => { e.preventDefault(); onRun(request()); };
+  const canLive = source === "yahoo";
   return html`<form class="panel side" onSubmit=${submit}>
     <h2>Portfolio</h2>
     <label>Start from an example</label>
@@ -160,13 +165,19 @@ function PortfolioForm({ status, examples, onRun, busy }) {
           <option value="equal">Equal weights</option><option value="select">Best recent score</option><option value="exp">Exponential weights</option>
         </select></div>
     </div>
-    <button class="run" disabled=${busy}>${busy ? html`<span class="spinner"></span>Analyzing…` : "Analyze risk"}</button>
+    <label class="checks" style=${{ marginTop: "12px" }}><input type="checkbox" checked=${live && canLive} disabled=${!canLive}
+      onChange=${(e) => setLive(e.target.checked)} />Live: re-run every minute while the market is open${canLive ? "" : " (Yahoo Finance only)"}</label>
+    <div class="btnrow">
+      <button class="run" disabled=${busy}>${busy ? html`<span class="spinner"></span>Analyzing…` : "Analyze risk"}</button>
+      <button type="button" class="secondary" disabled=${busy} title="Download prices again instead of using the copy saved in the last 12 hours"
+        onClick=${() => onRun({ ...request(), refresh: true })}>Refresh data</button>
+    </div>
     <p class="hint">${status ? `Engine: ${status.engine}.` : ""} ${modelSet === "all" ? "All 8 models take about 5 to 30 seconds (GARCH-t refits every day)." : "Fast models take about a second."}</p>
   </form>`;
 }
 
 // ------------------------------------------------------------------ results
-function Results({ r }) {
+function Results({ r, liveRunning }) {
   const levels = Object.keys(r.risk.forecasts);
   const [level, setLevel] = useState(levels[0]);
   const a = r.analytics, v = a.volatility, value = r.input.value;
@@ -177,9 +188,13 @@ function Results({ r }) {
   const breaches = useMemo(() => fc.loss.map((l, i) => (fc.combined_var[i] != null && l > fc.combined_var[i] ? { i, v: 100 * l, color: css("--bad") } : null)).filter(Boolean), [fc]);
   const bt = r.risk.backtest.filter((b) => (100 * b.confidence).toString() === level || (100 * b.confidence).toFixed(1) === level);
   const tl = (t) => html`<span class=${"badge " + t}>${t}</span>`;
+  const lt = r.latest;
   return html`<div class="main">
+    ${r.live ? html`<${LiveBar} live=${r.live} running=${liveRunning} />` : null}
     ${r.data.notes.length ? html`<div class="notes">${r.data.notes.map((n) => html`<p key=${n}>${n}</p>`)}</div>` : null}
     <div class="kpis">
+      <div class="kpi"><div class="k">${r.live && r.live.provisional ? "Today so far (provisional)" : "Latest day"}</div>
+        <div class=${"v " + tone(lt.pnl)}>${lt.pnl > 0 ? "+" : ""}${money(lt.pnl)}</div><div class="d">${signed(lt.return)} · ${lt.date} vs ${lt.previous}</div></div>
       <div class="kpi"><div class="k">1-day ${(100 * top).toFixed(1).replace(".0", "")}% VaR (combined)</div><div class="v">${money(comb.var * value)}</div><div class="d">${pct(comb.var)} of the portfolio</div></div>
       <div class="kpi"><div class="k">1-day ${(100 * top).toFixed(1).replace(".0", "")}% Expected Shortfall</div><div class="v">${money(comb.es * value)}</div><div class="d">average loss on the worst days, ${pct(comb.es)}</div></div>
       <div class="kpi"><div class="k">Volatility, annualized</div><div class="v">${pct(v.realized_250, 1)}</div><div class="d">last year · GARCH next day ${pct(v.garch_next_day, 1)}</div></div>
@@ -229,6 +244,8 @@ function Results({ r }) {
         ${a.assets.length > 1 ? html`<${Heatmap} tickers=${a.assets.map((x) => x.ticker)} corr=${a.correlation} />` : html`<p class="caption">Add a second holding to see correlations.</p>`}</div>
     </div>
 
+    <${StressPanel} input=${r.input} />
+
     <div class="grid2">
       <div class="panel"><h3>Volatility models</h3><div class="facts">
         <span>Realized, whole period</span><span>${pct(v.realized_full, 1)}</span>
@@ -250,6 +267,110 @@ function Results({ r }) {
   </div>`;
 }
 
+// ------------------------------------------------------------------ Phase 20: live mode and stress tests
+function LiveBar({ live, running }) {
+  const state = live.market_open
+    ? (live.provisional ? `today's prices are live (last quote ${live.asof ? live.asof.slice(11) : "–"} New York time) and provisional until the close`
+      : "market open, but no intraday quotes for every holding yet")
+    : "market closed: showing the last close; updates resume when the market opens";
+  return html`<div class="livebar"><span><span class=${"dot" + (live.market_open ? " on" : "")}></span><b>Live</b></span>
+    <span>${state}</span><span class="caption" style=${{ margin: 0 }}>checked ${live.checked.slice(11)} · re-runs every minute${running ? " · updating…" : ""}</span>
+    ${live.error ? html`<span class="neg">quotes failed: ${live.error}</span>` : null}</div>`;
+}
+
+function ScenarioDetail({ s, value }) {
+  return html`<div style=${{ marginTop: "12px" }}>
+    <div class="subhead">${s.name}: ${s.from} to ${s.to}, ${s.days} trading days</div>
+    <${LineChart} dates=${s.path_dates} series=${[{ name: "portfolio value (start = 100)", color: css("--s1"), values: s.value.map((v) => 100 * v) }]} yFormat=${(t) => t.toFixed(0)} height=${200} />
+    <div class="scroll"><table><thead><tr><th>Holding</th><th>Return</th><th>Contribution</th><th>P&L</th><th>Note</th></tr></thead>
+      <tbody>${s.holdings.map((h) => html`<tr key=${h.ticker}><td>${h.ticker}</td><td class=${tone(h.return)}>${signed(h.return, 1)}</td>
+        <td>${signed(h.contribution, 1)}</td><td>${money(h.contribution * value)}</td>
+        <td class="caption">${h.proxied_days ? `proxied by beta × SPY on ${h.proxied_days} of ${s.days} days` : ""}</td></tr>`)}</tbody></table></div>
+  </div>`;
+}
+
+function StressPanel({ input }) {
+  const [res, setRes] = useState(null);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [sel, setSel] = useState("covid");
+  const [shocks, setShocks] = useState([{ ticker: "SPY", shock: -20 }]);
+  const [horizon, setHorizon] = useState(10);
+  const [reverse, setReverse] = useState(20);
+  const value = input.value;
+  const run = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const body = { holdings: input.tickers.map((t, i) => ({ ticker: t, weight: input.weights[i] })), value, source: input.source,
+        shocks: shocks.filter((x) => x.ticker.trim() && x.shock !== "").map((x) => ({ ticker: x.ticker.trim(), shock: Number(x.shock) / 100 })),
+        horizon_days: Number(horizon), reverse_loss: Number(reverse) / 100, confidence: 0.99 };
+      const resp = await fetch("/api/stress", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const out = await resp.json();
+      if (!resp.ok) throw new Error(out.error || "stress test failed");
+      setRes(out);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  useEffect(() => { run(); }, []);
+  const setShock = (i, k, v) => setShocks(shocks.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  const avail = res ? res.scenarios.filter((s) => s.available) : [];
+  const chosen = avail.find((s) => s.key === sel) || avail[0];
+  const sh = res && res.shock, rv = res && res.reverse;
+  return html`<div class="panel">
+    <h3>Stress tests</h3>
+    <p class="caption">What past crises and hypothetical shocks would do to this portfolio today, held without trading. These are far larger than VaR, which describes an ordinary bad day (Experiment 25).</p>
+    ${err ? html`<div class="error"><b>Stress test failed:</b> ${err}</div>` : null}
+    ${!res ? html`<p class="caption">${busy ? html`<span class="spinner"></span>Loading prices since 2007…` : ""}</p>` : html`
+      <div class="scroll"><table>
+        <thead><tr><th>Scenario</th><th>Dates</th><th>Portfolio</th><th>P&L</th><th>Max drawdown</th><th>Worst day</th><th>S&P 500</th><th></th></tr></thead>
+        <tbody>${res.scenarios.map((s) => s.available ? html`<tr key=${s.key} class=${"click" + (chosen && s.key === chosen.key ? " sel" : "")} onClick=${() => setSel(s.key)}>
+            <td>${s.name}</td><td class="caption">${s.from.slice(0, 7)} → ${s.to.slice(0, 7)}</td><td class=${tone(s.total_return)}>${signed(s.total_return, 1)}</td>
+            <td>${money(s.pnl)}</td><td>${pct(-s.max_drawdown, 1)}</td><td>${signed(s.worst_day, 1)}</td><td>${signed(s.market_return, 1)}</td>
+            <td class="caption">${s.proxied.length ? "proxied: " + s.proxied.join(", ") : ""}</td></tr>`
+          : html`<tr key=${s.key}><td>${s.name}</td><td colspan="7" class="caption" style=${{ textAlign: "left" }}>${s.reason}</td></tr>`)}</tbody>
+      </table></div>
+      <p class="caption" style=${{ marginTop: "6px" }}>Click a scenario for its path and each holding's part. A holding that did not trade then is replaced by its beta to SPY times SPY's daily moves; that keeps the market's part of the move and misses the holding's own (off by about 6 points on average in Experiment 25).</p>
+      ${chosen ? html`<${ScenarioDetail} s=${chosen} value=${value} />` : null}
+
+      <div class="grid2" style=${{ marginTop: "8px" }}>
+        <div>
+          <div class="subhead">What if…</div>
+          <p class="caption">Shock one or more tickers (held or not, e.g. SPY, TLT, an oil ETF). Every holding moves by what its correlations with them over the last ${res.data.cov_days} days imply.</p>
+          <div class="shocks">
+            <span class="caption">Ticker</span><span class="caption">Move %</span><span></span>
+            ${shocks.map((x, i) => html`<${React.Fragment} key=${i}>
+              <input value=${x.ticker} onInput=${(e) => setShock(i, "ticker", e.target.value.toUpperCase())} aria-label="shocked ticker" />
+              <input type="number" step="any" value=${x.shock} onInput=${(e) => setShock(i, "shock", e.target.value)} aria-label="shock in percent" />
+              <button type="button" class="icon" title="Remove" onClick=${() => setShocks(shocks.filter((_, j) => j !== i))}>✕</button><//>`)}
+          </div>
+          <button type="button" class="link" onClick=${() => setShocks([...shocks, { ticker: "", shock: -10 }])}>+ Add shock</button>
+          <div class="inline" style=${{ marginTop: "6px" }}><span class="caption" style=${{ margin: 0 }}>over</span>
+            <input type="number" min="1" max="250" value=${horizon} onInput=${(e) => setHorizon(e.target.value)} /><span class="caption" style=${{ margin: 0 }}>trading days</span></div>
+          <div><button type="button" class="secondary" style=${{ marginTop: "10px" }} disabled=${busy} onClick=${run}>${busy ? "Running…" : "Apply"}</button></div>
+          ${sh ? html`<div class="facts" style=${{ marginTop: "12px" }}>
+            <span>Expected P&L</span><span class=${tone(sh.expected_return)}>${money(sh.pnl)} (${signed(sh.expected_return, 1)})</span>
+            <span>Bad case at 99% (allowing for the spread around the expected move)</span><span class="neg">${money(sh.pnl_at_confidence)} (${signed(-sh.loss_at_confidence, 1)})</span>
+            ${sh.holdings.map((h) => html`<${React.Fragment} key=${h.ticker}><span>${h.ticker} expected move</span><span class=${tone(h.expected_return)}>${signed(h.expected_return, 1)}</span><//>`)}
+          </div>` : null}
+        </div>
+        <div>
+          <div class="subhead">Reverse stress test</div>
+          <p class="caption">How far the market (SPY) would have to fall for this portfolio to lose a given amount, on average.</p>
+          <div class="inline"><span class="caption" style=${{ margin: 0 }}>Loss of</span>
+            <input type="number" min="1" max="99" value=${reverse} onInput=${(e) => setReverse(e.target.value)} /><span class="caption" style=${{ margin: 0 }}>%</span>
+            <button type="button" class="link" onClick=${run}>update</button></div>
+          ${rv ? html`<div class="facts" style=${{ marginTop: "12px" }}>
+            <span>Portfolio beta to SPY</span><span>${num(res.portfolio_beta)}</span>
+            <span>Market move that loses ${pct(rv.target_loss, 0)} (${money(-rv.target_loss * value)})</span>
+            <span class="neg">${rv.market_return == null ? "none: the portfolio gains when the market falls" : rv.market_return <= -1 ? "more than the market can fall" : signed(rv.market_return, 1)}</span>
+            ${Object.entries(res.betas).map(([t, b]) => html`<${React.Fragment} key=${t}><span>${t} beta</span><span>${num(b)}</span><//>`)}
+          </div>` : null}
+          <p class="caption" style=${{ marginTop: "8px" }}>Correlations shift in a crisis: in 2022 bonds and energy moved against what every earlier crisis implied. Shock several tickers to test such a break.</p>
+        </div>
+      </div>
+      <p class="caption">Prices ${res.data.start} to ${res.data.end}. Correlations: ${res.data.cov_from} to ${res.data.cov_to}.</p>`}
+  </div>`;
+}
+
 function App() {
   const [status, setStatus] = useState(null);
   const [examples, setExamples] = useState([]);
@@ -260,23 +381,46 @@ function App() {
     fetch("/api/status").then((r) => r.json()).then(setStatus).catch(() => setError("Cannot reach the qre server."));
     fetch("/api/examples").then((r) => r.json()).then(setExamples).catch(() => {});
   }, []);
-  const run = async (req) => {
-    setBusy(true); setError(null);
-    try {
-      const resp = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(req) });
-      const body = await resp.json();
-      if (!resp.ok) throw new Error(body.error || "analysis failed");
-      setResult(body);
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  const [live, setLive] = useState(false);
+  const [liveRunning, setLiveRunning] = useState(false);
+  const lastReq = useRef(null);
+  const inFlight = useRef(false);
+  const post = async (req) => {
+    const resp = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(req) });
+    const body = await resp.json();
+    if (!resp.ok) throw new Error(body.error || "analysis failed");
+    return body;
   };
+  const run = async (req) => {
+    const full = { ...req, live: live && req.source === "yahoo" };
+    lastReq.current = full;
+    setBusy(true); setError(null); inFlight.current = true;
+    try { setResult(await post(full)); } catch (e) { setError(e.message); } finally { setBusy(false); inFlight.current = false; }
+  };
+  // Live mode: re-run the last analysis every minute in the background; the server only adds intraday prices
+  // while the market is open, so outside trading hours this just keeps the last close
+  useEffect(() => {
+    if (!live) return undefined;
+    const tick = async () => {
+      const req = lastReq.current;
+      if (!req || req.source !== "yahoo" || inFlight.current) return;
+      inFlight.current = true; setLiveRunning(true);
+      try { setResult(await post({ ...req, live: true })); setError(null); }
+      catch (e) { setError("Live update failed: " + e.message); }
+      finally { inFlight.current = false; setLiveRunning(false); }
+    };
+    tick();
+    const id = setInterval(tick, LIVE_EVERY_MS);
+    return () => clearInterval(id);
+  }, [live]);
   return html`<div>
     <header><h1>qre · Portfolio risk</h1><span class="sub">VaR, Expected Shortfall and volatility for any portfolio</span>
       <span class="pill">${status ? status.engine : "connecting…"}</span></header>
     <div class="layout">
-      <${PortfolioForm} status=${status} examples=${examples} onRun=${run} busy=${busy} />
+      <${PortfolioForm} status=${status} examples=${examples} onRun=${run} busy=${busy} live=${live} setLive=${setLive} />
       <div class="main">
         ${error ? html`<div class="error"><b>Could not analyze:</b> ${error}</div>` : null}
-        ${result ? html`<${Results} key=${JSON.stringify(result.input)} r=${result} />` : html`<div class="panel empty">Enter holdings and weights, then <b>Analyze risk</b>. The bundled six stocks work offline; any other ticker downloads from Yahoo Finance.</div>`}
+        ${result ? html`<${Results} key=${JSON.stringify({ ...result.input, live: undefined })} r=${result} liveRunning=${liveRunning} />` : html`<div class="panel empty">Enter holdings and weights, then <b>Analyze risk</b>. The bundled six stocks work offline; any other ticker downloads from Yahoo Finance.</div>`}
       </div>
     </div>
   </div>`;
