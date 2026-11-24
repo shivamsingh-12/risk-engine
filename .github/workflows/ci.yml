@@ -90,6 +90,33 @@ jobs:
       - name: Test
         run: ctest --test-dir build-asan --output-on-failure
 
+  #Phase 22: the lock-free queue and the streaming pipeline under ThreadSanitizer (data races)
+  thread-sanitizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++-13 libeigen3-dev
+      - name: Configure
+        run: >
+          cmake -G Ninja -B build-tsan -S cpp
+          -DCMAKE_CXX_COMPILER=g++-13
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DQRE_ENABLE_TSAN=ON
+          -DQRE_BUILD_EXPERIMENTS=OFF
+      - name: Build
+        run: cmake --build build-tsan --parallel
+      #setarch -R turns off address randomization, which newer kernels set too high for ThreadSanitizer's memory map
+      - name: Threaded tests
+        run: setarch "$(uname -m)" -R build-tsan/tests/qre_tests --gtest_filter='Queue*:StreamPipeline*:WebSocket*'
+      - name: qre_stream under load
+        run: |
+          setarch "$(uname -m)" -R build-tsan/apps/qre_stream --data data/market_data/adjusted_close.csv \
+            --holdings AAPL=100,JPM=50,XOM=80 --port 0 --rate 50000 --duration 5 2> tsan.log
+          ! grep -q "ThreadSanitizer" tsan.log
+
   #Line coverage of the C++ headers by the C++ tests, and of the Python package by the Python tests.
   #The numbers go to the job summary; the HTML report is an artifact.
   coverage:

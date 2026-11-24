@@ -32,5 +32,6 @@ One folder per experiment, each with its code, a `results/` folder of CSV files 
 | 24 | Benchmarks: where the time goes | cpp/benchmarks (write-up in docs/benchmarks.md) | cpp |
 | 25 | Stress testing: past crises, VaR in a crisis, conditional shocks, proxies | stress | cpp |
 | 26 | Portfolio construction, component risk and 10-day VaR | portfolio | cpp |
+| 27 | Streaming risk: incremental updates, drift, queues, pipeline latency | streaming | cpp |
 
 Every experiment is its own executable, built into `build/experiments/`. Run one from the repo root and it rewrites its `results/` folder. `docs/research_questions.md` lists the question each one asks and the short answer.

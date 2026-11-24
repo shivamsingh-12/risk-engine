@@ -32,8 +32,10 @@ add_executable(qre_tests
     test_execution.cpp
     test_stress.cpp
     test_portfolio.cpp
+    test_stream.cpp
 )
-target_link_libraries(qre_tests PRIVATE qre qre_warnings GTest::gtest_main)
+find_package(Threads REQUIRED)
+target_link_libraries(qre_tests PRIVATE qre qre_warnings GTest::gtest_main Threads::Threads)
 
 include(GoogleTest)
 gtest_discover_tests(qre_tests)
@@ -43,4 +45,10 @@ if(QRE_BUILD_APPS)
   add_test(NAME qre_run_smoke
            COMMAND qre_run --config configs/ci_smoke.conf --output ${CMAKE_BINARY_DIR}/qre_run_smoke
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/..)
+  #Phase 22: qre_stream starts, streams for two seconds on a free port and exits cleanly
+  add_test(NAME qre_stream_smoke
+           COMMAND qre_stream --data data/market_data/adjusted_close.csv --holdings AAPL=100,JPM=50
+                   --port 0 --rate 5000 --duration 2
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/..)
+  set_tests_properties(qre_stream_smoke PROPERTIES PASS_REGULAR_EXPRESSION "qre_stream: stopped")
 endif()

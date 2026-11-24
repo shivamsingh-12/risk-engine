@@ -58,6 +58,17 @@ if(QRE_ENABLE_SANITIZERS)
   target_link_options(qre INTERFACE -fsanitize=address,undefined)
 endif()
 
+#ThreadSanitizer (CI, Phase 22): checks the lock-free queue and the streaming pipeline for data races
+#cmake -B build-tsan -S cpp -DQRE_ENABLE_TSAN=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+option(QRE_ENABLE_TSAN "Build with ThreadSanitizer (not together with QRE_ENABLE_SANITIZERS)" OFF)
+if(QRE_ENABLE_TSAN)
+  if(QRE_ENABLE_SANITIZERS)
+    message(FATAL_ERROR "ThreadSanitizer cannot be combined with AddressSanitizer")
+  endif()
+  target_compile_options(qre INTERFACE -fsanitize=thread -fno-omit-frame-pointer)
+  target_link_options(qre INTERFACE -fsanitize=thread)
+endif()
+
 #coverage (CI): cmake -B build-cov -S cpp -DQRE_ENABLE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Debug
 option(QRE_ENABLE_COVERAGE "Instrument for gcov/llvm-cov coverage" OFF)
 if(QRE_ENABLE_COVERAGE)

@@ -1,4 +1,4 @@
-**Portfolio risk app (Phases 15, 20 and 21)**
+**Portfolio risk app (Phases 15 and 20 to 22)**
 
 An interactive page for testing the risk of any portfolio: enter tickers and weights, and it shows tomorrow's VaR
 and Expected Shortfall from all eight engine models and their combination, volatility (realized, EWMA, GARCH),
@@ -15,6 +15,12 @@ Phase 21 added:
 - **10-day risk:** VaR and ES over 10 days by five methods (Experiment 26).
 - **Suggest weights:** minimum variance, risk parity, mean-variance, inverse volatility or equal weights for the same
   holdings, with a largest-weight limit and optional shorts, and a button that applies them.
+
+Phase 22 added:
+- **Live stream:** starts `qre_stream` for the portfolio and shows value, P&L and 1-day VaR updating on every tick
+  over a WebSocket, with the tick-to-risk latency. The source is a simulated market with the holdings' own
+  covariance (a trading day passes in about a minute) or live Yahoo Finance quotes polled every 5 seconds. Needs
+  `qre_stream` built (`cmake --build build`).
 
 Also from Phase 20:
 - **Refresh data:** downloads prices again instead of using the copy saved in the last 12 hours.
@@ -35,10 +41,11 @@ much slower for the GARCH models, so it defaults to the four fast models in that
 
 | Piece | File | Job |
 | :---- | :---- | :---- |
-| Server | server.py | standard-library HTTP server; `/api/status`, `/api/examples`, `POST /api/analyze`, `POST /api/stress`, `POST /api/optimize`; local only |
+| Server | server.py | standard-library HTTP server; `/api/status`, `/api/examples`, `POST /api/analyze`, `POST /api/stress`, `POST /api/optimize`, `POST /api/stream/start` and `/stop`; local only |
 | Data | data.py | yfinance download (adjusted closes and intraday quotes) or stored files, disk cache, alignment, quality checks |
 | Stress tests | stress.py | scenario replay, shocks and reverse stress on top of `qre.risk.stress` |
 | Optimizer | optimize.py | suggested weights on top of `qre.portfolio.construction` |
+| Streaming | streaming.py | starts and stops `qre_stream` and pipes live quotes into it |
 | Engine | runner.py | writes a config, runs `qre_run` (or the Python engine), reads the report files back |
 | Analytics | analytics.py | volatility measures, GARCH persistence, risk contributions, correlations, drawdowns |
 | Front end | static/ | React 18 + htm from unpkg, no build step; plain SVG charts |

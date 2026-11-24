@@ -32,6 +32,7 @@ Each experiment asks one question. This file lists them with the short answer an
 | 24 | What does each operation cost, and what dominates a risk run? | GARCH fits; AAD gives 202 Greeks for 1.6 prices | docs/benchmarks.md |
 | 25 | What would past crises do to a portfolio today, and do VaR models cover crisis days? | Losses of 2 to 55% against one-day VaR of 1.4 to 3.8%; volatility-scaled models breach 2.5 to 3.7% of crisis days, not 1% | stress |
 | 26 | Which construction methods hold up out of sample, does component ES predict where losses come from, and how should 10-day VaR be computed? | Minimum variance yes, mean-variance no; component ES errors of 4 to 10 points against 11 to 42 for capital weights; √10 × an adaptive model | portfolio |
+| 27 | What does each design choice in a streaming risk engine buy? | Incremental updates: up to 717 times faster, drift below 10⁻¹²; lock-free queue: 27 to 53 times the throughput of a mutex; busy-polling: about 60 times lower median latency for one core | streaming |
 
 **Open questions**
 
