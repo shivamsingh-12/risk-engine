@@ -11,6 +11,8 @@
                             reverse_loss, refresh} -> historical scenarios, hypothetical shock, reverse stress test
     POST /api/optimize     {holdings, source, years, method, min_weight, max_weight, gamma}
                            -> suggested weights and current vs suggested volatility, VaR and risk shares (Phase 21)
+    POST /api/stream/start {holdings, value, source, mode: simulated|live, rate, speed} -> starts qre_stream and
+                           returns its WebSocket URL (Phase 22);  POST /api/stream/stop  stops it
 
 Weights are relative and scaled to sum to 100%; negative weights are short positions (Phase 21).
 
@@ -30,6 +32,7 @@ import numpy as np
 
 from qre.web import analytics, data, runner
 from qre.web import optimize as optimize_app
+from qre.web import streaming
 from qre.web import stress as stress_app
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -59,7 +62,7 @@ def _clean_json(x):
 
 
 class App:
-    def __init__(self, cache_dir, fetchers=None, qre_run=None, quotes=None, clock=None):
+    def __init__(self, cache_dir, fetchers=None, qre_run=None, quotes=None, clock=None, qre_stream=None):
         self.cache = data.PriceCache(cache_dir)
         self.fetchers = fetchers or {"yahoo": data.yfinance_fetcher, "bundled": data.bundled_fetcher}
         self.stress_fetchers = {"bundled": data.long_history_fetcher}
@@ -71,6 +74,7 @@ class App:
         self.clock = clock or data.new_york_now
         self.qre_run = qre_run
         self.lock = threading.Lock()
+        self.streams = streaming.StreamManager(qre_stream, quotes=self.quotes)
 
     def status(self):
         try:
@@ -80,7 +84,7 @@ class App:
             yf = False
         exe = runner.find_qre_run(self.qre_run)
         return {"engine": "C++ (qre_run)" if exe else "Python reference", "qre_run": exe, "yfinance": yf,
-                "default_models": "all" if exe else "fast"}
+                "default_models": "all" if exe else "fast", "stream": self.streams.status()}
 
     @staticmethod
     def _holdings(req):
@@ -210,6 +214,27 @@ class App:
         out["data"] = {"start": dates[0], "end": dates[-1], "notes": notes, "cached": cached}
         return _clean_json(out)
 
+    def stream_start(self, req):
+        tickers, weights = self._holdings(req)
+        value = self._value(req)
+        source = req.get("source", "yahoo")
+        if source not in self.fetchers:
+            raise data.DataError(f"unknown data source '{source}'")
+        mode = req.get("mode", "simulated")
+        if mode == "live" and source != "yahoo":
+            raise data.DataError("live quotes need Yahoo Finance as the data source")
+        today = data.bundled_last_date() if source == "bundled" else self.clock().date()
+        start, end = data.date_range(2, today)
+        dates, ticks, prices, _ = self.cache.get(source, tickers, start, end, self.fetchers[source])
+        if list(ticks) != tickers:
+            raise data.DataError("data source returned different tickers than requested")
+        dates, prices, _ = data.prepare(dates, tickers, prices, min_rows=251)
+        try:
+            rate, speed = float(req.get("rate", 1000)), float(req.get("speed", 0.02))
+        except (TypeError, ValueError):
+            raise data.DataError("rate and speed must be numbers") from None
+        return _clean_json(self.streams.start(dates, tickers, prices, weights, value, mode, rate, speed))
+
     def stress(self, req):
         tickers, weights = self._holdings(req)
         value = self._value(req)
@@ -294,7 +319,8 @@ def make_handler(app):
                 self._send(200, fh.read(), mimetypes.guess_type(full)[0] or "application/octet-stream")
 
         def do_POST(self):
-            routes = {"/api/analyze": app.analyze, "/api/stress": app.stress, "/api/optimize": app.optimize}
+            routes = {"/api/analyze": app.analyze, "/api/stress": app.stress, "/api/optimize": app.optimize,
+                      "/api/stream/start": app.stream_start, "/api/stream/stop": lambda req: app.streams.stop()}
             if self.path not in routes:
                 return self._send(404, {"error": "not found"})
             try:
@@ -312,9 +338,9 @@ def make_handler(app):
     return Handler
 
 
-def serve(host="127.0.0.1", port=8000, cache_dir=None, qre_run=None, open_browser=False):
+def serve(host="127.0.0.1", port=8000, cache_dir=None, qre_run=None, open_browser=False, qre_stream=None):
     cache_dir = cache_dir or os.path.join(data.REPO_ROOT, "runs", "cache")
-    app = App(cache_dir, qre_run=qre_run)
+    app = App(cache_dir, qre_run=qre_run, qre_stream=qre_stream)
     httpd = ThreadingHTTPServer((host, port), make_handler(app))
     url = f"http://{host}:{httpd.server_address[1]}/"
     st = app.status()
@@ -327,4 +353,5 @@ def serve(host="127.0.0.1", port=8000, cache_dir=None, qre_run=None, open_browse
     except KeyboardInterrupt:
         pass
     finally:
+        app.streams.stop()
         httpd.server_close()

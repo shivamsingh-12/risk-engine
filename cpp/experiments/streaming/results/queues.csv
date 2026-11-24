@@ -1,0 +1,13 @@
+queue,test,rate,messages_per_sec,p50_ns,p99_ns,p999_ns,max_ns,mean_ns
+spsc,max_throughput,,1.87913e+08,,,,,
+mutex,max_throughput,,3.55237e+06,,,,,
+spsc,max_throughput,,1.49656e+08,,,,,
+mutex,max_throughput,,3.59091e+06,,,,,
+spsc,max_throughput,,1.1859e+08,,,,,
+mutex,max_throughput,,4.34674e+06,,,,,
+spsc,latency,10000,,551.5,29439.5,860160,1564886,4044.58
+mutex,latency,10000,,1359.5,32511.5,663552,2096550,5012.83
+spsc,latency,100000,,459.5,115712,3.1785e+06,5106103,12428.5
+mutex,latency,100000,,1583.5,45567.5,4.03046e+06,10290077,15934.8
+spsc,latency,1e+06,,451.5,123904,811008,2408731,5527.56
+mutex,latency,1e+06,,18175.5,3.24403e+06,3.76832e+06,3907963,150269

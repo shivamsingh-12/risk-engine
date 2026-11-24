@@ -31,7 +31,8 @@ The experiment write-ups (in `cpp/experiments/` and `python_reference/experiment
 | Credit | Merton structural model, KMV asset estimation, Black-Cox first-passage default |
 | Hedging | deep hedging: a neural-network policy trained to minimize CVaR, with hand-written backpropagation |
 | Execution | Almgren-Chriss optimal liquidation and its efficient frontier |
-| Tools | `qre_run`, a config-driven, multi-threaded daily risk report; a local web app for analyzing, stress-testing and optimizing any portfolio (shorts allowed), with live intraday updates |
+| Streaming | `qre_stream`: VaR updated on every price tick in O(N + T), a lock-free single-producer/single-consumer queue, an allocation-free latency histogram, and a WebSocket/HTTP server written from scratch over POSIX sockets |
+| Tools | `qre_run`, a config-driven, multi-threaded daily risk report; `qre_stream`, live risk over WebSocket; a local web app for analyzing, stress-testing and optimizing any portfolio (shorts allowed), with a live stream panel |
 
 **Quick start**
 
@@ -44,6 +45,7 @@ The experiment write-ups (in `cpp/experiments/` and `python_reference/experiment
 
     build/apps/qre_run --config configs/daily_risk.conf       # daily risk report -> runs/daily/report.md
     qre-web --open                                            # portfolio risk app at http://127.0.0.1:8000
+    build/apps/qre_stream --data data/market_data/adjusted_close.csv --holdings AAPL=100,JPM=50   # live risk on ws://127.0.0.1:8001
 
 Run these from the repo root. `configs/README.md` documents the run configuration, `python_reference/qre/web/README.md` the app, and `docs/architecture.md` how the pieces fit together. On macOS, if the Apple compiler is too old for C++23, configure with `-DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++`.
 
@@ -76,6 +78,7 @@ Run these from the repo root. `configs/README.md` documents the run configuratio
 | 19 | Tooling: packaging, CI on two platforms, sanitizers, benchmarks | 24: where the time goes | Done |
 | 20 | Stress testing and scenarios; live data in the app | 25: what past crises would do, and what VaR misses | Done |
 | 21 | Portfolio construction, component risk, short positions, 10-day VaR | 26: which methods hold up out of sample | Done |
+| 22 | Streaming risk engine: incremental VaR, lock-free queue, WebSocket server | 27: what each design choice buys in latency | Done |
 
 Two changes from the original plan:
 - **Data layer.** I hadn't planned a data layer, but by Phase 7 it was clear it was needed before going further. Real prices have gaps, stale quotes, bad prints and splits, and every later result depends on catching them.
@@ -92,20 +95,21 @@ Two changes from the original plan:
 - **Stress testing:** on 5,462 crisis days, historical VaR was breached on 5.8% of days instead of 1%, and volatility-scaled models (filtered historical simulation, conditional EVT) on 2.5 to 3%. Correlations from past crises predicted 2022 badly: bonds and stocks fell together.
 - **Portfolio construction:** over 20 years out of sample, minimum variance cut volatility by 23 to 53% against equal weights in every universe; mean-variance with historical average returns had the worst risk-adjusted results. In a 60/40 portfolio, stocks carry about 100% of the tail risk.
 - **10-day VaR:** √10 times an adaptive 1-day model was better calibrated than GARCH multi-day forecasts, which relaxed too quickly after calm periods.
+- **Streaming:** updating VaR incrementally costs 0.1 to 0.7 microseconds a tick for books of 10 to 1,000 assets, up to 717 times less than recomputing, and drifts less than 10⁻¹² from the exact value over 10 million ticks. The lock-free queue moved 27 to 53 times more messages a second than a mutex queue.
 - **Bugs found by experiments, now fixed with regression tests:**
   - GARCH-t degrees of freedom drifting to 10¹⁶
   - a Student-t function that failed on macOS only
   - a GPD fit started outside its support
 
 **Why Python and C++?**  
-Python is for prototyping algorithms and checking closed forms; C++23 is for performance. Every C++ module is checked against its Python counterpart before I treat it as correct, which separates language-level bugs from mathematical errors. CI builds and tests both on Linux and macOS on every push to main, runs the C++ tests again under address and undefined-behavior sanitizers, and runs a daily risk report through both engines on the real data, failing if they disagree beyond 10⁻⁹.
+Python is for prototyping algorithms and checking closed forms; C++23 is for performance. Every C++ module is checked against its Python counterpart before I treat it as correct, which separates language-level bugs from mathematical errors. CI builds and tests both on Linux and macOS on every push to main, runs the C++ tests again under address and undefined-behavior sanitizers and the threaded code under ThreadSanitizer, and runs a daily risk report through both engines on the real data, failing if they disagree beyond 10⁻⁹.
 
 **Repository layout**
 
 | Path | Contents |
 | :---- | :---- |
 | cpp/include/qre/ | the engine (header-only): core, data, distributions, linalg, pricing, montecarlo, models, risk, stats, credit, hedging, execution, engine |
-| cpp/apps/ | qre_run |
+| cpp/apps/ | qre_run, qre_stream |
 | cpp/tests/, python_reference/tests/ | GoogleTest and pytest suites, one file per topic |
 | cpp/benchmarks/ | Google Benchmark suite (results in docs/benchmarks.md) |
 | cpp/experiments/, python_reference/experiments/ | one folder per experiment: code, results (CSV) and write-up |

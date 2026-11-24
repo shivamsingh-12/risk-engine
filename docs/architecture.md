@@ -13,7 +13,8 @@ qre is two implementations of the same models, plus the tools built on them.
 | Portfolio construction | `portfolio` | `portfolio` | minimum variance, mean-variance, risk parity, the constrained QP solver |
 | Applications of the models | `credit`, `hedging`, `execution` | same names | Merton credit, deep hedging, Almgren-Chriss |
 | Engine | `engine`, `cpp/apps/qre_run.cpp` | `engine` | config parser, thread pool, the daily risk run, report writer |
-| App | | `web` | local HTTP server, data download, analytics, React front end |
+| Streaming | `stream`, `cpp/apps/qre_stream.cpp` | `stream` (the incremental math) | lock-free SPSC queue, latency histogram, incremental VaR, synthetic feed, WebSocket/HTTP server, the pipeline |
+| App | | `web` | local HTTP server, data download, analytics, React front end; starts `qre_stream` for the live panel |
 
 **Design decisions**
 
@@ -39,3 +40,17 @@ qre is two implementations of the same models, plus the tools built on them.
 - Three kinds of test: closed forms and identities, C++ against Python values, and regression tests for bugs found by experiments (`test_regressions.cpp`).
 - The C++ tests execute 97% of the lines in `cpp/include/qre/` (measured with gcov; CI reports it on every run).
 - CI builds with GCC on Linux and Clang on macOS, runs both suites, runs the C++ tests again under AddressSanitizer and UndefinedBehaviorSanitizer, and compares the two engines end to end.
+
+**The streaming pipeline (Phase 22)**
+
+```
+feed thread ──Tick──▶ SpscQueue ──▶ risk thread ──snapshot (mutex, 10/s)──▶ server thread ──WebSocket──▶ browser
+ (synthetic or        (lock-free)    IncrementalRisk: O(N + T) per tick      poll(), non-blocking sockets,
+  stdin quotes)                      LatencyHistogram per tick               slow clients dropped
+```
+
+- The feed and risk threads share only the queue. Each side writes one index and reads the other's with acquire/release ordering; there are no locks on the tick path.
+- The risk thread publishes a snapshot a few times a second under a mutex. The server thread touches nothing else, so a slow client can delay its own updates but never a tick.
+- `IncrementalRisk` keeps x (exposures), m = Σx, σ² = x'Σx and the scenario losses L = −Rx. A tick in asset i updates them with one column of Σ and one column of R, and resynchronizes from scratch every 100,000 ticks as insurance.
+- The server listens on 127.0.0.1 only and rejects browser origins other than localhost.
+- CI runs the queue, pipeline and server tests under ThreadSanitizer, plus `qre_stream` itself under load.

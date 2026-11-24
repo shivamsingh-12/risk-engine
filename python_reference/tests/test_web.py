@@ -387,3 +387,81 @@ def test_optimize_endpoint(tmp_path):
                      ({"min_weight": 0.1}, "minimum weight"), ({"gamma": 0}, "risk aversion")):
         with pytest.raises(data.DataError, match=msg):
             app.optimize({**base, **bad})
+
+
+# ---------------------------------------------------------------- Phase 22: streaming
+def _ws_frames(port, n, timeout=10.0):
+    """Minimal WebSocket client: handshake, then read n text frames."""
+    import base64
+    import hashlib
+    import os
+    import socket
+    import struct
+    s = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+    key = base64.b64encode(os.urandom(16)).decode()
+    s.sendall((f"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+               f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nOrigin: http://127.0.0.1:8000\r\n\r\n").encode())
+    buf = b""
+    while b"\r\n\r\n" not in buf:
+        buf += s.recv(4096)
+    head, buf = buf.split(b"\r\n\r\n", 1)
+    accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+    assert b"101" in head.split(b"\r\n")[0] and accept.encode() in head
+    out = []
+    while len(out) < n:
+        if len(buf) >= 2:
+            ln, pos = buf[1] & 0x7F, 2
+            if ln == 126:
+                ln, pos = struct.unpack(">H", buf[2:4])[0], 4
+            elif ln == 127:
+                ln, pos = struct.unpack(">Q", buf[2:10])[0], 10
+            if len(buf) >= pos + ln:
+                out.append(json.loads(buf[pos:pos + ln]))
+                buf = buf[pos + ln:]
+                continue
+        buf += s.recv(65536)
+    s.close()
+    return out
+
+
+def test_stream_simulated_end_to_end(tmp_path):
+    from qre.web import streaming
+    if streaming.find_qre_stream() is None:
+        pytest.skip("qre_stream not built")
+    app = server.App(str(tmp_path), fetchers={"fake": fake_fetcher})
+    try:
+        st = app.stream_start({"holdings": [{"ticker": "AAA", "weight": 2}, {"ticker": "BBB", "weight": -1}],
+                               "source": "fake", "value": 1e6, "rate": 5000})
+        assert st["running"] and st["source"] == "simulated" and st["url"].startswith("ws://127.0.0.1:")
+        frames = _ws_frames(st["port"], 3)
+        assert frames[-1]["ticks"] > frames[0]["ticks"] > 0
+        last = frames[-1]
+        assert [a["ticker"] for a in last["assets"]] == ["AAA", "BBB"]
+        assert last["assets"][1]["shares"] < 0                                        # the short position
+        assert sum(a["component_var"] for a in last["assets"]) == pytest.approx(last["var_parametric"], rel=1e-5)
+        assert app.status()["stream"]["running"]
+    finally:
+        app.streams.stop()
+    assert not app.status()["stream"]["running"]
+
+
+def test_stream_live_feeds_quotes_into_stdin(tmp_path):
+    from qre.web import streaming
+    if streaming.find_qre_stream() is None:
+        pytest.skip("qre_stream not built")
+    calls = []
+
+    def quotes(tickers):
+        calls.append(1)
+        return {t: (100.0 + len(calls), "2026-11-24 10:00") for t in tickers}
+    mgr = streaming.StreamManager(quotes=quotes, poll_s=0.05)
+    d, t, p = fake_fetcher(["AAA", "BBB"], "", "")
+    try:
+        st = mgr.start(d, t, p, [0.5, 0.5], 1e5, source="live")
+        frames = _ws_frames(st["port"], 4)
+        assert frames[-1]["ticks"] >= 2 and frames[-1]["source"] == "lines"
+        assert frames[-1]["assets"][0]["price"] > 100.0
+    finally:
+        mgr.stop()
+    with pytest.raises(data.DataError, match="simulated or live"):
+        mgr.start(d, t, p, [0.5, 0.5], 1e5, source="tape")

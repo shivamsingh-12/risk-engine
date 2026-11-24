@@ -24,7 +24,7 @@ function niceTicks(lo, hi, n = 5) {
   return out;
 }
 
-function LineChart({ dates, series, yFormat = (v) => v.toFixed(0), height = 240, width = 760, bars = null, markers = null }) {
+function LineChart({ dates, series, yFormat = (v) => v.toFixed(0), height = 240, width = 760, bars = null, markers = null, xLabel = (d) => d.slice(0, 7) }) {
   const W = width, H = height, L = 52, R = 12, T = 10, B = 26;
   const [hover, setHover] = useState(null);
   const ref = useRef(null);
@@ -37,7 +37,7 @@ function LineChart({ dates, series, yFormat = (v) => v.toFixed(0), height = 240,
   const x = (i) => L + (i / Math.max(n - 1, 1)) * (W - L - R);
   const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
   const ticks = niceTicks(lo, hi);
-  const xt = [0, 0.2, 0.4, 0.6, 0.8, 1].map((f) => Math.round(f * (n - 1)));
+  const xt = [...new Set([0, 0.2, 0.4, 0.6, 0.8, 1].map((f) => Math.round(f * (n - 1))))];   // unique: short series repeat indices
   const path = (vs) => {
     let d = "", pen = false;
     vs.forEach((v, i) => { if (v == null || !isFinite(v)) { pen = false; return; } d += (pen ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1); pen = true; });
@@ -54,7 +54,7 @@ function LineChart({ dates, series, yFormat = (v) => v.toFixed(0), height = 240,
     <div class="tip">${hover == null ? " " : html`<b>${dates[hover]}</b>${bars ? html` · ${bars.name} ${yFormat(bars.values[hover])}` : ""}${series.map((s) => html` · <span style=${{ color: s.color }}>${s.name}</span> ${s.values[hover] == null ? "–" : yFormat(s.values[hover])}`)}`}</div>
     <svg ref=${ref} class="chart" viewBox=${`0 0 ${W} ${H}`} onMouseMove=${onMove} onMouseLeave=${() => setHover(null)}>
       ${ticks.map((t) => html`<g key=${t}><line class="grid" x1=${L} x2=${W - R} y1=${y(t)} y2=${y(t)} /><text x=${L - 6} y=${y(t) + 4} text-anchor="end">${yFormat(t)}</text></g>`)}
-      ${xt.map((i) => html`<text key=${"x" + i} x=${x(i)} y=${H - 6} text-anchor="middle">${dates[i] ? dates[i].slice(0, 7) : ""}</text>`)}
+      ${xt.map((i) => html`<text key=${"x" + i} x=${x(i)} y=${H - 6} text-anchor="middle">${dates[i] ? xLabel(dates[i]) : ""}</text>`)}
       ${bars ? bars.values.map((v, i) => v == null || v <= 0 ? null : html`<rect key=${"b" + i} x=${x(i) - bw / 2} y=${y(v)} width=${bw} height=${Math.max(0.5, y(0) - y(v))} fill=${bars.colorAt ? bars.colorAt(i) : bars.color} />`) : null}
       ${series.map((s) => html`<path key=${s.name} d=${path(s.values)} fill="none" stroke=${s.color} stroke-width=${s.width || 1.6} stroke-dasharray=${s.dash || ""} />`)}
       ${markers ? markers.map((m) => html`<circle key=${"m" + m.i} cx=${x(m.i)} cy=${y(m.v)} r="3" fill=${m.color} />`) : null}
@@ -256,6 +256,8 @@ function Results({ r, liveRunning, onApply }) {
       <${OptimizerPanel} input=${r.input} onApply=${onApply} />
     </div>
 
+    <${StreamPanel} input=${r.input} />
+
     <${StressPanel} input=${r.input} />
 
     <div class="grid2">
@@ -356,6 +358,84 @@ function OptimizerPanel({ input, onApply }) {
       </div>
       <p class="caption" style=${{ marginTop: "6px" }}>In-sample figures over ${res.window_days} days (${res.data.start} to ${res.data.end}); out of sample the optimizer's risk was 0 to 6% higher in Experiment 26.</p>
       <button type="button" class="run" onClick=${() => onApply(res.tickers, sug.weights)}>Use these weights</button>` : null}`}
+  </div>`;
+}
+
+// ------------------------------------------------------------------ Phase 22: live stream from qre_stream
+const STREAM_KEEP = 300;          // snapshots kept for the charts (30 seconds at 10 per second)
+const us = (ns) => (ns == null ? "–" : ns < 1000 ? ns.toFixed(0) + " ns" : ns < 1e6 ? (ns / 1000).toFixed(ns < 1e4 ? 1 : 0) + " µs" : (ns / 1e6).toFixed(1) + " ms");
+
+function StreamPanel({ input }) {
+  const [state, setState] = useState({ phase: "idle" });      // idle | starting | live | closed | error
+  const [hist, setHist] = useState([]);
+  const [rate, setRate] = useState(1000);
+  const sock = useRef(null);
+  const live = useRef(false);
+  const p0 = useRef(null);                                      // prices in the first snapshot
+  const close = () => { if (sock.current) { sock.current.onclose = null; sock.current.close(); sock.current = null; } };
+  const stop = async (silent) => {
+    close();
+    live.current = false;
+    try { await fetch("/api/stream/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); } catch (e) {}
+    if (!silent) setState((s) => ({ ...s, phase: "closed" }));
+  };
+  useEffect(() => () => { if (live.current) stop(true); }, []);
+  const start = async (mode) => {
+    close(); setHist([]); p0.current = null; setState({ phase: "starting", mode });
+    try {
+      const body = { holdings: input.tickers.map((t, i) => ({ ticker: t, weight: input.weights[i] })), value: input.value,
+        source: input.source, mode, rate };
+      const resp = await fetch("/api/stream/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const st = await resp.json();
+      if (!resp.ok) throw new Error(st.error || "could not start the stream");
+      live.current = true;
+      const ws = new WebSocket(st.url);
+      sock.current = ws;
+      ws.onmessage = (ev) => {
+        const d = JSON.parse(ev.data);
+        d.t = new Date().toLocaleTimeString([], { hour12: false });
+        if (!p0.current) p0.current = d.assets.map((a) => a.price);
+        setHist((h) => (h.length >= STREAM_KEEP ? [...h.slice(1), d] : [...h, d]));
+        setState((s) => (s.phase === "live" ? s : { phase: "live", mode, port: st.port }));
+      };
+      ws.onclose = () => setState((s) => ({ ...s, phase: "closed" }));
+      ws.onerror = () => setState({ phase: "error", error: "lost the connection to qre_stream" });
+    } catch (e) { setState({ phase: "error", error: e.message }); }
+  };
+  const d = hist.length ? hist[hist.length - 1] : null;
+  const running = state.phase === "live" || state.phase === "starting";
+  const lat = d && d.latency_ns.recent.count ? d.latency_ns.recent : d && d.latency_ns.all;
+  return html`<div class="panel">
+    <h3>Live stream</h3>
+    <p class="caption">Value, P&L and 1-day VaR updated on every price tick by <code>qre_stream</code> (C++), pushed here over a WebSocket 10 times a second. Each tick updates the risk incrementally in well under a microsecond (Experiment 27). <b>Simulated market</b>: prices move with these holdings' own volatilities and correlations, sped up so a trading day passes in about a minute. <b>Live quotes</b>: the latest Yahoo Finance prices every few seconds, during market hours.</p>
+    <div class="inline" style=${{ flexWrap: "wrap", gap: "8px", marginTop: "4px" }}>
+      <button type="button" class="secondary" disabled=${running} onClick=${() => start("simulated")}>Start simulated market</button>
+      <button type="button" class="secondary" disabled=${running || input.source !== "yahoo"} title=${input.source !== "yahoo" ? "needs Yahoo Finance as the data source" : ""} onClick=${() => start("live")}>Start live quotes</button>
+      <button type="button" class="secondary" disabled=${!running} onClick=${() => stop(false)}>Stop</button>
+      <span class="caption" style=${{ margin: 0 }}>simulated ticks per second</span>
+      <select value=${rate} disabled=${running} onChange=${(e) => setRate(Number(e.target.value))} style=${{ width: "auto" }}>
+        ${[1000, 10000, 100000].map((r) => html`<option key=${r} value=${r}>${r.toLocaleString()}</option>`)}</select>
+    </div>
+    ${state.phase === "error" ? html`<div class="error" style=${{ marginTop: "10px" }}>${state.error}</div>` : null}
+    ${state.phase === "starting" ? html`<p class="caption"><span class="spinner"></span>Starting qre_stream…</p>` : null}
+    ${d ? html`
+      <div class="livebar" style=${{ marginTop: "10px" }}><span><span class=${"dot" + (state.phase === "live" ? " on" : "")}></span><b>${state.phase === "live" ? (state.mode === "live" ? "Live quotes" : "Simulated market") : "Stopped"}</b></span>
+        <span>${d.ticks.toLocaleString()} ticks · ${Math.round(d.ticks_per_sec).toLocaleString()} per second</span>
+        <span>tick → risk latency: median ${us(lat.p50)}, 99th percentile ${us(lat.p99)}</span></div>
+      <div class="kpis" style=${{ marginTop: "10px" }}>
+        <div class="kpi"><div class="k">Value</div><div class="v">${money(d.value)}</div><div class="d">started at ${money(d.value - d.pnl)}</div></div>
+        <div class="kpi"><div class="k">P&L since start</div><div class=${"v " + tone(d.pnl)}>${d.pnl > 0 ? "+" : ""}${money(d.pnl)}</div><div class="d">${signed(d.pnl / (d.value - d.pnl))}</div></div>
+        <div class="kpi"><div class="k">1-day ${(100 * d.confidence).toFixed(0)}% VaR, normal</div><div class="v">${money(d.var_parametric)}</div><div class="d">ES ${money(d.es_parametric)}</div></div>
+        <div class="kpi"><div class="k">1-day ${(100 * d.confidence).toFixed(0)}% VaR, historical</div><div class="v">${money(d.var_historical)}</div><div class="d">ES ${money(d.es_historical)} · ${d.window.days} days</div></div>
+      </div>
+      ${hist.length > 1 ? html`<div class="grid2" style=${{ marginTop: "6px" }}>
+        <div><div class="subhead">Value</div><${LineChart} dates=${hist.map((x) => x.t)} xLabel=${(t) => t} height=${180} series=${[{ name: "value", color: css("--s1"), values: hist.map((x) => x.value) }]} yFormat=${(v) => money(v)} /></div>
+        <div><div class="subhead">1-day VaR</div><${LineChart} dates=${hist.map((x) => x.t)} xLabel=${(t) => t} height=${180}
+          series=${[{ name: "normal", color: css("--s1"), values: hist.map((x) => x.var_parametric) }, { name: "historical", color: css("--s2"), values: hist.map((x) => x.var_historical) }]} yFormat=${(v) => money(v)} /></div>
+      </div>` : null}
+      <div class="scroll"><table><thead><tr><th>Ticker</th><th>Price</th><th>Since start</th><th>Exposure</th><th>Part of VaR</th></tr></thead>
+        <tbody>${d.assets.map((a, j) => { const start = p0.current ? p0.current[j] : a.price; return html`<tr key=${a.ticker}><td>${a.ticker}</td><td>${a.price.toFixed(2)}</td>
+          <td class=${tone(a.price - start)}>${signed(a.price / start - 1)}</td><td>${money(a.exposure)}</td><td>${money(a.component_var)}</td></tr>`; })}</tbody></table></div>` : null}
   </div>`;
 }
 

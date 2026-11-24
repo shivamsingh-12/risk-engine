@@ -207,3 +207,8 @@ target_link_libraries(stress_experiment PRIVATE qre)
 #Experiment 26 (Phase 21): portfolio construction, component risk, 10-day VaR
 add_executable(portfolio_experiment portfolio/portfolio_experiment.cpp)
 target_link_libraries(portfolio_experiment PRIVATE qre)
+
+#Experiment 27 (Phase 22): streaming risk
+find_package(Threads REQUIRED)
+add_executable(streaming_experiment streaming/streaming_experiment.cpp)
+target_link_libraries(streaming_experiment PRIVATE qre Threads::Threads)
