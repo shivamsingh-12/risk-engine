@@ -83,3 +83,21 @@ tr.total td { font-weight: 650; }
 .empty { color: var(--muted); padding: 40px; text-align: center; }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 8px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* Phase 20: refresh, live mode, stress tests */
+.btnrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 16px; }
+.btnrow .run { margin-top: 0; }
+.secondary { padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); font: inherit; cursor: pointer; }
+.secondary:disabled { opacity: .6; cursor: progress; }
+.livebar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 13px; padding: 8px 12px; border-radius: 8px; background: var(--soft); }
+.livebar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; margin-right: 6px; }
+.livebar .dot.on { background: var(--good); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.pos { color: var(--good); }
+.neg { color: var(--bad); }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--soft); }
+tr.sel td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.shocks { display: grid; grid-template-columns: minmax(0, 1fr) 96px 28px; gap: 6px; align-items: center; max-width: 360px; }
+.inline { display: flex; align-items: center; gap: 6px; }
+.inline input { width: 78px; padding: 4px 6px; }
+.subhead { font-size: 13px; font-weight: 650; margin: 16px 0 6px; }

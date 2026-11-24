@@ -23,13 +23,14 @@ The experiment write-ups (in `cpp/experiments/` and `python_reference/experiment
 | Pricing | Black-Scholes with Greeks and implied volatility; Monte Carlo with variance reduction; Merton jump-diffusion; Heston (closed form, simulation, calibration) |
 | Advanced Monte Carlo | Sobol quasi-random numbers, Brownian bridge, pathwise and likelihood-ratio Greeks, adjoint algorithmic differentiation (AAD) |
 | Risk models | historical, parametric, Monte Carlo, EWMA, filtered historical simulation, GARCH, GARCH-t, extreme value theory (POT, conditional EVT) |
+| Stress testing | replay of ten crises (2007 to 2025) with beta proxies for missing history, hypothetical shocks by Gaussian conditioning, reverse stress tests |
 | Validation | rolling backtests, Kupiec and Christoffersen tests, Basel traffic light, ES backtest (Z2), FZ0 scoring, Diebold-Mariano tests |
 | High dimensions | PCA, Ledoit-Wolf shrinkage, random-matrix eigenvalue clipping |
 | Model combination | an adaptive engine that scores every model daily and combines them |
 | Credit | Merton structural model, KMV asset estimation, Black-Cox first-passage default |
 | Hedging | deep hedging: a neural-network policy trained to minimize CVaR, with hand-written backpropagation |
 | Execution | Almgren-Chriss optimal liquidation and its efficient frontier |
-| Tools | `qre_run`, a config-driven, multi-threaded daily risk report; a local web app for analyzing any portfolio |
+| Tools | `qre_run`, a config-driven, multi-threaded daily risk report; a local web app for analyzing and stress-testing any portfolio, with live intraday updates |
 
 **Quick start**
 
@@ -72,6 +73,7 @@ Run these from the repo root. `configs/README.md` documents the run configuratio
 | 17 | Deep hedging | 22: neural hedging with costs and stochastic volatility | Done |
 | 18 | Optimal execution | 23: Almgren-Chriss trade-offs | Done |
 | 19 | Tooling: packaging, CI on two platforms, sanitizers, benchmarks | 24: where the time goes | Done |
+| 20 | Stress testing and scenarios; live data in the app | 25: what past crises would do, and what VaR misses | Done |
 
 Two changes from the original plan:
 - **Data layer.** I hadn't planned a data layer, but by Phase 7 it was clear it was needed before going further. Real prices have gaps, stale quotes, bad prints and splits, and every later result depends on catching them.
@@ -85,6 +87,7 @@ Two changes from the original plan:
 - **Credit:** Merton's model puts near-zero spreads on short-maturity debt (the credit spread puzzle). Estimating asset volatility from historical equity volatility understates a deteriorating firm's default probability badly.
 - **Deep hedging:** a small network trained only on the tail of hedging losses matched Black-Scholes delta when trading was free. With 1% trading costs it cut the 95% CVaR of hedging losses by 21%, mostly by trading 29% less.
 - **Execution:** the first reduction in execution risk away from TWAP is nearly free, and a risk-averse seller front-loads the order and finishes within a few days, however long it is allowed.
+- **Stress testing:** on 5,462 crisis days, historical VaR was breached on 5.8% of days instead of 1%, and volatility-scaled models (filtered historical simulation, conditional EVT) on 2.5 to 3%. Correlations from past crises predicted 2022 badly: bonds and stocks fell together.
 - **Bugs found by experiments, now fixed with regression tests:**
   - GARCH-t degrees of freedom drifting to 10¹⁶
   - a Student-t function that failed on macOS only
