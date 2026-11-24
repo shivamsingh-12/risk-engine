@@ -8,15 +8,21 @@ descriptive side:
   GARCH(1,1)          next-day and long-run vol, persistence alpha + beta and the half-life of a shock,
                       ln(0.5) / ln(alpha + beta) days
   risk contributions  RC_i = w_i (Sigma w)_i / sigma_p, which sum to sigma_p (Euler); shown as % of portfolio vol
-  diversification     DR = sum w_i sigma_i / sigma_p >= 1; 1 means no diversification benefit
+  component VaR/ES    (Phase 21) each holding's part of the 1-day VaR and ES: parametric (normal) and historical
+                      (its average loss on the tail days), last 250 days; they sum to the portfolio figure
+  10-day VaR/ES       (Phase 21) four methods from qre.risk.horizon on the last 500 days (Experiment 26)
+  diversification     DR = sum |w_i| sigma_i / sigma_p; 1 means no diversification benefit (with shorts, a hedge
+                      also raises it)
   drawdown            1 - V_t / max_{s<=t} V_s on the value index V
 """
 import math
 
 import numpy as np
 
+from qre.risk import component as cr
 from qre.risk import ewma as ew
 from qre.risk import garch as gh
+from qre.risk import horizon as hz
 from qre.risk import var_es as ve
 
 TRADING_DAYS = 252
@@ -41,6 +47,41 @@ def rolling_vol(r, n):
 def drawdown(value):
     peak = np.maximum.accumulate(value)
     return 1.0 - value / peak
+
+
+def horizon_risk(rp, h=10, confidences=(0.99, 0.975), long_window=500, seed=0):
+    """h-day VaR/ES of the portfolio's daily returns by the four methods of Experiment 26."""
+    rp = np.asarray(rp, dtype=float)
+    long = rp[-long_window:]
+    short = rp[-250:]
+    fit = gh.fit_garch(long)
+    out = []
+    for c in confidences:
+        ewma_fhs = ew.fhs_var_es(short, c)
+        rows = {"sqrt_time_fhs_ewma": (ewma_fhs[0] * math.sqrt(h), ewma_fhs[1] * math.sqrt(h)),
+                "sqrt_time_historical": hz.sqrt_time(short, c, h),
+                "garch_normal": hz.garch_normal(long, c, h, fit=fit),
+                "fhs_garch": hz.fhs_garch(long, c, h, n_paths=10_000, seed=seed, fit=fit)}
+        if long.size - h + 1 >= 100:
+            rows["overlapping"] = hz.overlapping(long, c, h)
+        for k, (var, es) in rows.items():
+            out.append({"method": k, "confidence": c, "var": float(var), "es": float(es)})
+    return {"horizon_days": h, "window_days": int(long.size), "rows": out}
+
+
+def components(rets, w, window=250, confidences=(0.99, 0.975)):
+    recent = rets[-window:]
+    cov = np.cov(recent, rowvar=False, ddof=1).reshape(w.size, w.size)
+    out = {}
+    for c in confidences:
+        p = cr.parametric_components(w, cov, c)
+        hc = cr.historical_components(recent, w, c)
+        out[str(c)] = {"parametric_var": p.var, "parametric_es": p.es, "historical_var": hc.var, "historical_es": hc.es,
+                       "tail_days": hc.tail_days,
+                       "assets": [{"parametric_var": float(p.component_var[j]), "parametric_es": float(p.component_es[j]),
+                                   "historical_var": float(hc.component_var[j]),
+                                   "historical_es": float(hc.component_es[j])} for j in range(w.size)]}
+    return out
 
 
 def analyze(dates, tickers, prices, weights, window=250):
@@ -93,7 +134,10 @@ def analyze(dates, tickers, prices, weights, window=250):
                     "risk_contribution": float(rc[j] / sig_p) if sig_p > 0 else 0.0}
                    for j, t in enumerate(tickers)],
         "portfolio_vol_250": float(sig_p * ANN),
-        "diversification_ratio": float((w @ asset_vol) / sig_p) if sig_p > 0 else 1.0,
+        "diversification_ratio": float((np.abs(w) @ asset_vol) / sig_p) if sig_p > 0 else 1.0,
+        "gross_exposure": float(np.abs(w).sum()), "short_exposure": float(-w[w < 0].sum()),
+        "components": components(rets, w, window),
+        "horizon": horizon_risk(rp),
         "correlation": corr.tolist(),
         "series": {
             "dates": list(dates), "value": value.tolist(), "drawdown": dd.tolist(),

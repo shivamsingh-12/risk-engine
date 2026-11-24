@@ -203,3 +203,7 @@ target_link_libraries(execution_experiment
 #Experiment 25 (Phase 20): stress testing
 add_executable(stress_experiment stress/stress_experiment.cpp)
 target_link_libraries(stress_experiment PRIVATE qre)
+
+#Experiment 26 (Phase 21): portfolio construction, component risk, 10-day VaR
+add_executable(portfolio_experiment portfolio/portfolio_experiment.cpp)
+target_link_libraries(portfolio_experiment PRIVATE qre)

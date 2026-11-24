@@ -69,17 +69,20 @@ function LineChart({ dates, series, yFormat = (v) => v.toFixed(0), height = 240,
 }
 
 function ContributionBars({ assets }) {
-  const max = Math.max(...assets.flatMap((a) => [a.weight, a.risk_contribution]), 0.01);
+  const max = Math.max(...assets.flatMap((a) => [Math.abs(a.weight), Math.abs(a.risk_contribution)]), 0.01);
+  // negative values (a short position, or a hedge that lowers risk) are drawn by size, hatched
+  const bar = (x, color) => ({ height: "8px", width: (100 * Math.abs(x) / max) + "%", borderRadius: "3px",
+    background: x < 0 ? `repeating-linear-gradient(135deg, ${color} 0 3px, transparent 3px 6px)` : color, border: x < 0 ? `1px solid ${color}` : "none" });
   return html`<div>
     ${assets.map((a) => html`<div key=${a.ticker} style=${{ display: "grid", gridTemplateColumns: "64px 1fr 120px", alignItems: "center", gap: "8px", margin: "6px 0" }}>
       <b>${a.ticker}</b>
       <div>
-        <div style=${{ height: "8px", width: (100 * a.weight / max) + "%", background: css("--s1"), borderRadius: "3px", marginBottom: "3px" }}></div>
-        <div style=${{ height: "8px", width: (100 * Math.max(a.risk_contribution, 0) / max) + "%", background: css("--s2"), borderRadius: "3px" }}></div>
+        <div style=${{ ...bar(a.weight, css("--s1")), marginBottom: "3px" }}></div>
+        <div style=${bar(a.risk_contribution, css("--s2"))}></div>
       </div>
       <span style=${{ fontSize: "12px", color: css("--muted"), textAlign: "right" }}>${pct(a.weight, 1)} → ${pct(a.risk_contribution, 1)}</span>
     </div>`)}
-    <div class="legend"><span><i style=${{ background: css("--s1") }}></i>share of capital</span><span><i style=${{ background: css("--s2") }}></i>share of risk (volatility)</span></div>
+    <div class="legend"><span><i style=${{ background: css("--s1") }}></i>share of capital</span><span><i style=${{ background: css("--s2") }}></i>share of risk (volatility)</span><span>hatched: negative (short or hedge)</span></div>
   </div>`;
 }
 
@@ -98,7 +101,7 @@ function Heatmap({ tickers, corr }) {
 }
 
 // ------------------------------------------------------------------ inputs
-function PortfolioForm({ status, examples, onRun, busy, live, setLive }) {
+function PortfolioForm({ status, examples, onRun, busy, live, setLive, apply }) {
   const [holdings, setHoldings] = useState([{ ticker: "AAPL", weight: 1 }, { ticker: "JPM", weight: 1 }, { ticker: "XOM", weight: 1 }]);
   const [source, setSource] = useState("bundled");
   const [years, setYears] = useState(3);
@@ -120,6 +123,12 @@ function PortfolioForm({ status, examples, onRun, busy, live, setLive }) {
       source, years: Number(years), value: Number(value), confidence, models: modelSet, combination };
   };
   const submit = (e) => { e.preventDefault(); onRun(request()); };
+  // "Use these weights" from the optimizer: replace the holdings and analyze again
+  useEffect(() => {
+    if (!apply) return;
+    setHoldings(apply.holdings.map((h) => ({ ...h })));
+    onRun({ ...request(), holdings: apply.holdings });
+  }, [apply]);
   const canLive = source === "yahoo";
   return html`<form class="panel side" onSubmit=${submit}>
     <h2>Portfolio</h2>
@@ -128,12 +137,12 @@ function PortfolioForm({ status, examples, onRun, busy, live, setLive }) {
       <option value="">Choose a preset…</option>
       ${examples.map((e) => html`<option key=${e.name} value=${e.name}>${e.name}</option>`)}
     </select>
-    <label>Holdings (weights are relative; they are scaled to sum to 100%)</label>
+    <label>Holdings (weights are relative and scaled to sum to 100%; a negative weight is a short position)</label>
     <div class="holdings">
       <span class="hdr">Ticker</span><span class="hdr">Weight</span><span class="hdr" style=${{ textAlign: "right" }}>%</span><span></span>
       ${holdings.map((h, i) => html`<${React.Fragment} key=${i}>
         <input value=${h.ticker} placeholder="e.g. MSFT" onInput=${(e) => set(i, "ticker", e.target.value.toUpperCase())} aria-label="ticker" />
-        <input type="number" min="0" step="any" value=${h.weight} onInput=${(e) => set(i, "weight", e.target.value)} aria-label="weight" />
+        <input type="number" step="any" value=${h.weight} onInput=${(e) => set(i, "weight", e.target.value)} aria-label="weight" />
         <span class="pct">${total > 0 ? ((100 * (parseFloat(h.weight) || 0)) / total).toFixed(1) : "–"}</span>
         <button type="button" class="icon" title="Remove" onClick=${() => setHoldings(holdings.filter((_, j) => j !== i))}>✕</button>
       <//>`)}
@@ -177,7 +186,7 @@ function PortfolioForm({ status, examples, onRun, busy, live, setLive }) {
 }
 
 // ------------------------------------------------------------------ results
-function Results({ r, liveRunning }) {
+function Results({ r, liveRunning, onApply }) {
   const levels = Object.keys(r.risk.forecasts);
   const [level, setLevel] = useState(levels[0]);
   const a = r.analytics, v = a.volatility, value = r.input.value;
@@ -189,6 +198,7 @@ function Results({ r, liveRunning }) {
   const bt = r.risk.backtest.filter((b) => (100 * b.confidence).toString() === level || (100 * b.confidence).toFixed(1) === level);
   const tl = (t) => html`<span class=${"badge " + t}>${t}</span>`;
   const lt = r.latest;
+  const h10 = a.horizon.rows.find((x) => x.method === "sqrt_time_fhs_ewma" && Math.abs(x.confidence - top) < 1e-9);
   return html`<div class="main">
     ${r.live ? html`<${LiveBar} live=${r.live} running=${liveRunning} />` : null}
     ${r.data.notes.length ? html`<div class="notes">${r.data.notes.map((n) => html`<p key=${n}>${n}</p>`)}</div>` : null}
@@ -199,7 +209,8 @@ function Results({ r, liveRunning }) {
       <div class="kpi"><div class="k">1-day ${(100 * top).toFixed(1).replace(".0", "")}% Expected Shortfall</div><div class="v">${money(comb.es * value)}</div><div class="d">average loss on the worst days, ${pct(comb.es)}</div></div>
       <div class="kpi"><div class="k">Volatility, annualized</div><div class="v">${pct(v.realized_250, 1)}</div><div class="d">last year · GARCH next day ${pct(v.garch_next_day, 1)}</div></div>
       <div class="kpi"><div class="k">Max drawdown</div><div class="v">${pct(-a.returns.max_drawdown, 1)}</div><div class="d">${a.returns.max_drawdown_peak} → ${a.returns.max_drawdown_trough}</div></div>
-      <div class="kpi"><div class="k">Diversification ratio</div><div class="v">${num(a.diversification_ratio)}×</div><div class="d">1.00× means no diversification benefit</div></div>
+      <div class="kpi"><div class="k">10-day ${(100 * top).toFixed(1).replace(".0", "")}% VaR</div><div class="v">${h10 ? money(h10.var * value) : "–"}</div><div class="d">${h10 ? pct(h10.var) + " · √10 × filtered historical" : "needs a 99% or 97.5% level"}</div></div>
+      <div class="kpi"><div class="k">Diversification ratio</div><div class="v">${num(a.diversification_ratio)}×</div><div class="d">${a.short_exposure > 0 ? `gross exposure ${pct(a.gross_exposure, 0)}, shorts ${pct(a.short_exposure, 0)}` : "1.00× means no diversification benefit"}</div></div>
     </div>
 
     <div class="panel">
@@ -235,13 +246,14 @@ function Results({ r, liveRunning }) {
     </div>
 
     <div class="grid2">
-      <div class="panel"><h3>Where the risk comes from</h3><p class="caption">Each holding's share of capital vs its share of portfolio volatility (last 250 days). Shares of risk sum to 100%.</p>
-        <${ContributionBars} assets=${a.assets} />
-        <div class="scroll" style=${{ marginTop: "10px" }}><table><thead><tr><th>Ticker</th><th>Weight</th><th>Own vol</th><th>Risk share</th></tr></thead>
-          <tbody>${a.assets.map((x) => html`<tr key=${x.ticker}><td>${x.ticker}</td><td>${pct(x.weight, 1)}</td><td>${pct(x.vol, 1)}</td><td>${pct(x.risk_contribution, 1)}</td></tr>`)}
-          <tr class="total"><td>Portfolio</td><td>100%</td><td>${pct(a.portfolio_vol_250, 1)}</td><td>100%</td></tr></tbody></table></div></div>
+      <${ComponentsPanel} a=${a} value=${value} />
       <div class="panel"><h3>Correlations</h3><p class="caption">Daily returns, last 250 days. Low or negative correlation is what diversifies.</p>
         ${a.assets.length > 1 ? html`<${Heatmap} tickers=${a.assets.map((x) => x.ticker)} corr=${a.correlation} />` : html`<p class="caption">Add a second holding to see correlations.</p>`}</div>
+    </div>
+
+    <div class="grid2">
+      <${HorizonPanel} h=${a.horizon} value=${value} />
+      <${OptimizerPanel} input=${r.input} onApply=${onApply} />
     </div>
 
     <${StressPanel} input=${r.input} />
@@ -264,6 +276,86 @@ function Results({ r, liveRunning }) {
         <span>Current drawdown</span><span>${pct(-a.returns.current_drawdown, 1)}</span>
       </div></div>
     </div>
+  </div>`;
+}
+
+// ------------------------------------------------------------------ Phase 21: component risk, 10-day risk, optimizer
+const H_LABEL = { sqrt_time_fhs_ewma: "√10 × filtered hist.", sqrt_time_historical: "√10 × historical",
+  overlapping: "Overlapping 10-day", garch_normal: "GARCH, normal", fhs_garch: "GARCH, simulated" };
+const METHOD_LABEL = { min_variance: "Minimum variance", risk_parity: "Risk parity (equal risk shares)",
+  mean_variance: "Mean-variance (uses past returns)", inverse_vol: "Inverse volatility", equal: "Equal weights" };
+
+function ComponentsPanel({ a, value }) {
+  const c99 = a.components["0.99"], c975 = a.components["0.975"];
+  return html`<div class="panel"><h3>Where the risk comes from</h3>
+    <p class="caption">Each holding's share of capital vs its share of portfolio volatility (last 250 days), then its part of the 1-day VaR and ES in dollars. The parts add up to the portfolio's figure; a negative part is a hedge.</p>
+    <${ContributionBars} assets=${a.assets} />
+    <div class="scroll" style=${{ marginTop: "10px" }}><table>
+      <thead><tr><th>Ticker</th><th>Weight</th><th>Vol share</th><th>VaR 99%</th><th>ES 97.5%</th><th>ES share</th></tr></thead>
+      <tbody>${a.assets.map((x, j) => html`<tr key=${x.ticker}><td>${x.ticker}</td><td>${pct(x.weight, 1)}</td><td>${pct(x.risk_contribution, 1)}</td>
+          <td>${money(c99.assets[j].parametric_var * value)}</td><td>${money(c975.assets[j].historical_es * value)}</td><td class=${c975.assets[j].historical_es < 0 ? "pos" : ""}>${pct(c975.assets[j].historical_es / c975.historical_es, 0)}</td></tr>`)}
+        <tr class="total"><td>Portfolio</td><td>100%</td><td>100%</td><td>${money(c99.parametric_var * value)}</td><td>${money(c975.historical_es * value)}</td><td>100%</td></tr></tbody></table></div>
+    <p class="caption" style=${{ marginTop: "8px" }}>VaR parts: normal model (Euler allocation). ES parts: each holding's average loss on the ${c975.tail_days} worst days of the last 250. In Experiment 26 these predicted next year's split with errors of 4 to 10 points; capital weights were off by 11 to 42.</p></div>`;
+}
+
+function HorizonPanel({ h, value }) {
+  const methods = [...new Set(h.rows.map((x) => x.method))];
+  const get = (m, c) => h.rows.find((x) => x.method === m && x.confidence === c);
+  return html`<div class="panel"><h3>${h.horizon_days}-day risk</h3>
+    <p class="caption">VaR and ES over ${h.horizon_days} trading days (the Basel horizon), five ways, from the last ${h.window_days} days. In Experiment 26's backtest the first method was the best calibrated; the GARCH methods relaxed too fast after calm periods.</p>
+    <div class="scroll"><table><thead><tr><th>Method</th><th>VaR 99%</th><th>ES 99%</th><th>ES 97.5%</th></tr></thead>
+      <tbody>${methods.map((m, i) => { const a = get(m, 0.99), b = get(m, 0.975); return html`<tr key=${m} class=${i === 0 ? "total" : ""}><td>${H_LABEL[m] || m}</td>
+        <td>${a ? money(a.var * value) : "–"}</td><td>${a ? money(a.es * value) : "–"}</td><td>${b ? money(b.es * value) : "–"}</td></tr>`; })}</tbody></table></div>
+    <p class="caption" style=${{ marginTop: "8px" }}>Filtered historical: last 250 days rescaled by EWMA volatility, then × √10. GARCH: fitted on ${h.window_days} days; "simulated" draws past shocks through the GARCH recursion. ES 97.5% is the measure Basel's newer rules use.</p></div>`;
+}
+
+function OptimizerPanel({ input, onApply }) {
+  const [method, setMethod] = useState("min_variance");
+  const [shorts, setShorts] = useState(false);
+  const [maxW, setMaxW] = useState(100);
+  const [gamma, setGamma] = useState(5);
+  const [res, setRes] = useState(null);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const n = input.tickers.length;
+  const run = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const body = { holdings: input.tickers.map((t, i) => ({ ticker: t, weight: input.weights[i] })), source: input.source, years: input.years,
+        method, min_weight: shorts ? -0.3 : 0, max_weight: Number(maxW) / 100, gamma: Number(gamma) };
+      const resp = await fetch("/api/optimize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const out = await resp.json();
+      if (!resp.ok) throw new Error(out.error || "optimization failed");
+      setRes(out);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const bounded = method === "min_variance" || method === "mean_variance";
+  const cur = res && res.current, sug = res && res.suggested;
+  return html`<div class="panel"><h3>Suggest weights</h3>
+    <p class="caption">Weights for the same holdings chosen by a portfolio construction method, from the last two years at most (Ledoit-Wolf covariance).</p>
+    ${n < 2 ? html`<p class="caption">Add a second holding to optimize.</p>` : html`
+    <div class="row2">
+      <div><label>Method</label><select value=${method} onChange=${(e) => setMethod(e.target.value)}>
+        ${Object.entries(METHOD_LABEL).map(([k, v]) => html`<option key=${k} value=${k}>${v}</option>`)}</select></div>
+      <div><label>Largest weight %</label><input type="number" min="1" max="150" value=${maxW} disabled=${!bounded} onInput=${(e) => setMaxW(e.target.value)} /></div>
+    </div>
+    ${method === "mean_variance" ? html`<div class="row2"><div><label>Risk aversion γ</label><input type="number" min="0.1" step="any" value=${gamma} onInput=${(e) => setGamma(e.target.value)} /></div><span></span></div>` : null}
+    <label class="checks" style=${{ marginTop: "12px" }}><input type="checkbox" checked=${shorts} disabled=${!bounded} onChange=${(e) => setShorts(e.target.checked)} />Allow shorts down to −30% per holding${bounded ? "" : " (minimum variance and mean-variance only)"}</label>
+    <div><button type="button" class="secondary" style=${{ marginTop: "12px" }} disabled=${busy} onClick=${run}>${busy ? "Optimizing…" : "Suggest"}</button></div>
+    ${err ? html`<div class="error" style=${{ marginTop: "10px" }}>${err}</div>` : null}
+    ${res ? html`
+      ${res.note ? html`<div class="notes" style=${{ marginTop: "10px" }}><p>Note: ${res.note}.</p></div>` : null}
+      <div class="scroll" style=${{ marginTop: "10px" }}><table><thead><tr><th>Ticker</th><th>Now</th><th>Suggested</th><th>Risk share now</th><th>Suggested</th></tr></thead>
+        <tbody>${res.tickers.map((t, i) => html`<tr key=${t}><td>${t}</td><td>${pct(cur.weights[i], 1)}</td><td><b>${pct(sug.weights[i], 1)}</b></td>
+          <td>${pct(cur.risk_shares[i], 0)}</td><td>${pct(sug.risk_shares[i], 0)}</td></tr>`)}</tbody></table></div>
+      <div class="facts" style=${{ marginTop: "10px" }}>
+        <span>Volatility, annualized</span><span>${pct(cur.vol, 1)} → <b>${pct(sug.vol, 1)}</b></span>
+        <span>1-day 99% VaR (historical)</span><span>${pct(cur.var99_historical)} → <b>${pct(sug.var99_historical)}</b></span>
+        <span>Past return over the window (not a forecast)</span><span>${pct(cur.mean_return, 1)} → ${pct(sug.mean_return, 1)}</span>
+        <span>Turnover to get there</span><span>${pct(res.turnover, 0)}</span>
+      </div>
+      <p class="caption" style=${{ marginTop: "6px" }}>In-sample figures over ${res.window_days} days (${res.data.start} to ${res.data.end}); out of sample the optimizer's risk was 0 to 6% higher in Experiment 26.</p>
+      <button type="button" class="run" onClick=${() => onApply(res.tickers, sug.weights)}>Use these weights</button>` : null}`}
   </div>`;
 }
 
@@ -383,6 +475,8 @@ function App() {
   }, []);
   const [live, setLive] = useState(false);
   const [liveRunning, setLiveRunning] = useState(false);
+  const [apply, setApply] = useState(null);
+  const onApply = (tickers, weights) => setApply({ holdings: tickers.map((t, i) => ({ ticker: t, weight: Math.round(10000 * weights[i]) / 100 })) });
   const lastReq = useRef(null);
   const inFlight = useRef(false);
   const post = async (req) => {
@@ -417,10 +511,10 @@ function App() {
     <header><h1>qre · Portfolio risk</h1><span class="sub">VaR, Expected Shortfall and volatility for any portfolio</span>
       <span class="pill">${status ? status.engine : "connecting…"}</span></header>
     <div class="layout">
-      <${PortfolioForm} status=${status} examples=${examples} onRun=${run} busy=${busy} live=${live} setLive=${setLive} />
+      <${PortfolioForm} status=${status} examples=${examples} onRun=${run} busy=${busy} live=${live} setLive=${setLive} apply=${apply} />
       <div class="main">
         ${error ? html`<div class="error"><b>Could not analyze:</b> ${error}</div>` : null}
-        ${result ? html`<${Results} key=${JSON.stringify({ ...result.input, live: undefined })} r=${result} liveRunning=${liveRunning} />` : html`<div class="panel empty">Enter holdings and weights, then <b>Analyze risk</b>. The bundled six stocks work offline; any other ticker downloads from Yahoo Finance.</div>`}
+        ${result ? html`<${Results} key=${JSON.stringify({ ...result.input, live: undefined })} r=${result} liveRunning=${liveRunning} onApply=${onApply} />` : html`<div class="panel empty">Enter holdings and weights, then <b>Analyze risk</b>. The bundled six stocks work offline; any other ticker downloads from Yahoo Finance.</div>`}
       </div>
     </div>
   </div>`;

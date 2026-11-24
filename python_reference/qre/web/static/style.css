@@ -46,7 +46,7 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 .notes { border-left: 3px solid var(--warn); background: var(--soft); padding: 8px 12px; border-radius: 6px; margin-bottom: 14px; font-size: 13px; }
 .notes p { margin: 2px 0; }
 .main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; min-width: 0; }
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 12px; }
 .kpi { min-width: 0; }
 .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; box-shadow: var(--shadow); }
 .kpi .k { font-size: 12px; color: var(--muted); }
