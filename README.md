@@ -26,11 +26,12 @@ The experiment write-ups (in `cpp/experiments/` and `python_reference/experiment
 | Stress testing | replay of ten crises (2007 to 2025) with beta proxies for missing history, hypothetical shocks by Gaussian conditioning, reverse stress tests |
 | Validation | rolling backtests, Kupiec and Christoffersen tests, Basel traffic light, ES backtest (Z2), FZ0 scoring, Diebold-Mariano tests |
 | High dimensions | PCA, Ledoit-Wolf shrinkage, random-matrix eigenvalue clipping |
+| Portfolio construction | minimum variance, mean-variance, risk parity and inverse volatility, with weight limits and short positions; component VaR and ES; 10-day VaR five ways |
 | Model combination | an adaptive engine that scores every model daily and combines them |
 | Credit | Merton structural model, KMV asset estimation, Black-Cox first-passage default |
 | Hedging | deep hedging: a neural-network policy trained to minimize CVaR, with hand-written backpropagation |
 | Execution | Almgren-Chriss optimal liquidation and its efficient frontier |
-| Tools | `qre_run`, a config-driven, multi-threaded daily risk report; a local web app for analyzing and stress-testing any portfolio, with live intraday updates |
+| Tools | `qre_run`, a config-driven, multi-threaded daily risk report; a local web app for analyzing, stress-testing and optimizing any portfolio (shorts allowed), with live intraday updates |
 
 **Quick start**
 
@@ -74,6 +75,7 @@ Run these from the repo root. `configs/README.md` documents the run configuratio
 | 18 | Optimal execution | 23: Almgren-Chriss trade-offs | Done |
 | 19 | Tooling: packaging, CI on two platforms, sanitizers, benchmarks | 24: where the time goes | Done |
 | 20 | Stress testing and scenarios; live data in the app | 25: what past crises would do, and what VaR misses | Done |
+| 21 | Portfolio construction, component risk, short positions, 10-day VaR | 26: which methods hold up out of sample | Done |
 
 Two changes from the original plan:
 - **Data layer.** I hadn't planned a data layer, but by Phase 7 it was clear it was needed before going further. Real prices have gaps, stale quotes, bad prints and splits, and every later result depends on catching them.
@@ -88,6 +90,8 @@ Two changes from the original plan:
 - **Deep hedging:** a small network trained only on the tail of hedging losses matched Black-Scholes delta when trading was free. With 1% trading costs it cut the 95% CVaR of hedging losses by 21%, mostly by trading 29% less.
 - **Execution:** the first reduction in execution risk away from TWAP is nearly free, and a risk-averse seller front-loads the order and finishes within a few days, however long it is allowed.
 - **Stress testing:** on 5,462 crisis days, historical VaR was breached on 5.8% of days instead of 1%, and volatility-scaled models (filtered historical simulation, conditional EVT) on 2.5 to 3%. Correlations from past crises predicted 2022 badly: bonds and stocks fell together.
+- **Portfolio construction:** over 20 years out of sample, minimum variance cut volatility by 23 to 53% against equal weights in every universe; mean-variance with historical average returns had the worst risk-adjusted results. In a 60/40 portfolio, stocks carry about 100% of the tail risk.
+- **10-day VaR:** √10 times an adaptive 1-day model was better calibrated than GARCH multi-day forecasts, which relaxed too quickly after calm periods.
 - **Bugs found by experiments, now fixed with regression tests:**
   - GARCH-t degrees of freedom drifting to 10¹⁶
   - a Student-t function that failed on macOS only

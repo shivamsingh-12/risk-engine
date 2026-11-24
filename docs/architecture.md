@@ -9,7 +9,8 @@ qre is two implementations of the same models, plus the tools built on them.
 | Foundations | `core`, `distributions`, `linalg`, `optimization`, `estimators`, `stats` | `linalg`, `stats` (numpy and scipy cover the rest) | RNG, normal and Student-t, covariance, Cholesky, shrinkage, PCA, root finding, Nelder-Mead |
 | Data | `data` | `data` | CSV loading, corporate actions, quality checks, returns, rolling windows, point-in-time views |
 | Pricing | `pricing`, `models`, `montecarlo`, `autodiff` | same names | Black-Scholes, Heston, Merton jumps, OU, GBM and SDE simulation, Sobol, Brownian bridge, Greeks, AAD |
-| Risk | `risk` | `risk` | VaR/ES models, EWMA, GARCH, EVT, backtests, scoring, model combination |
+| Risk | `risk` | `risk` | VaR/ES models, EWMA, GARCH, EVT, backtests, scoring, model combination, stress tests, component risk, multi-day VaR |
+| Portfolio construction | `portfolio` | `portfolio` | minimum variance, mean-variance, risk parity, the constrained QP solver |
 | Applications of the models | `credit`, `hedging`, `execution` | same names | Merton credit, deep hedging, Almgren-Chriss |
 | Engine | `engine`, `cpp/apps/qre_run.cpp` | `engine` | config parser, thread pool, the daily risk run, report writer |
 | App | | `web` | local HTTP server, data download, analytics, React front end |

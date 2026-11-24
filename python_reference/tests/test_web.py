@@ -136,7 +136,8 @@ def test_app_analyze_end_to_end(tmp_path, python_engine):
 
 def test_app_validation(tmp_path, python_engine):
     app = server.App(str(tmp_path), fetchers={"fake": fake_fetcher})
-    for kw, msg in (({"holdings": [{"ticker": "AAA", "weight": -1}]}, "non-negative"),
+    for kw, msg in (({"holdings": [{"ticker": "AAA", "weight": -1}]}, "positive sum"),
+                    ({"holdings": [{"ticker": "AAA", "weight": 4}, {"ticker": "BBB", "weight": -3}]}, "gross exposure"),
                     ({"holdings": [{"ticker": "AAA", "weight": "x"}]}, "numbers"),
                     ({"years": 1, "start": None}, "between 2 and 15"),
                     ({"value": -5}, "positive"), ({"confidence": [0.5]}, "between 0.90"),
@@ -343,3 +344,46 @@ def test_forward_fill_keeps_leading_gaps():
     p = np.array([[np.nan, 1.0], [2.0, np.nan], [np.nan, 3.0], [4.0, 4.0]])
     f = ws.forward_fill_gaps(p)
     assert np.isnan(f[0, 0]) and f[2, 0] == 2.0 and f[1, 1] == 1.0
+
+
+# ---------------------------------------------------------------- Phase 21: shorts, components, 10-day VaR, optimizer
+def test_analyze_with_a_short_position_and_new_sections(tmp_path, python_engine):
+    app = server.App(str(tmp_path), fetchers={"fake": fake_fetcher})
+    r = app.analyze(_request(holdings=[{"ticker": "AAA", "weight": 130}, {"ticker": "BBB", "weight": -30},
+                                       {"ticker": "CCC", "weight": 0}]))
+    assert r["input"]["weights"] == pytest.approx([1.3, -0.3, 0.0])
+    a = r["analytics"]
+    assert a["gross_exposure"] == pytest.approx(1.6) and a["short_exposure"] == pytest.approx(0.3)
+    for c, comp in a["components"].items():
+        assert sum(x["parametric_var"] for x in comp["assets"]) == pytest.approx(comp["parametric_var"])
+        assert sum(x["historical_es"] for x in comp["assets"]) == pytest.approx(comp["historical_es"])
+        assert comp["assets"][2]["historical_es"] == 0.0                 # zero weight, zero component
+    rows = {(x["method"], x["confidence"]): x for x in a["horizon"]["rows"]}
+    assert {m for m, _ in rows} == {"sqrt_time_fhs_ewma", "sqrt_time_historical", "garch_normal", "fhs_garch",
+                                    "overlapping"}
+    assert all(x["es"] >= x["var"] > 0 for x in rows.values())
+    assert json.dumps(r)
+
+
+def test_optimize_endpoint(tmp_path):
+    app = server.App(str(tmp_path), fetchers={"fake": fake_fetcher})
+    base = {"holdings": [{"ticker": "AAA", "weight": 1}, {"ticker": "BBB", "weight": 1}, {"ticker": "CCC", "weight": 1}],
+            "source": "fake", "start": "2019-01-01", "end": "2020-06-01"}
+    mv = app.optimize({**base, "method": "min_variance"})
+    w = np.array(mv["suggested"]["weights"])
+    assert w.sum() == pytest.approx(1.0) and np.all(w >= -1e-12)
+    assert mv["suggested"]["vol"] <= mv["current"]["vol"] + 1e-12
+    assert mv["turnover"] == pytest.approx(0.5 * np.abs(w - 1 / 3).sum())
+    capped = app.optimize({**base, "method": "min_variance", "max_weight": 0.4})
+    assert max(capped["suggested"]["weights"]) <= 0.4 + 1e-12
+    shorts = app.optimize({**base, "method": "min_variance", "min_weight": -0.3})
+    assert shorts["suggested"]["vol"] <= mv["suggested"]["vol"] + 1e-12
+    rp = app.optimize({**base, "method": "risk_parity"})
+    assert rp["suggested"]["risk_shares"] == pytest.approx([1 / 3] * 3, abs=1e-9)
+    mean_v = app.optimize({**base, "method": "mean_variance", "gamma": 3})
+    assert "luck" in mean_v["note"]
+    assert json.dumps(mean_v)
+    for bad, msg in (({"method": "kelly"}, "method must be"), ({"max_weight": 0.2}, "no fully invested"),
+                     ({"min_weight": 0.1}, "minimum weight"), ({"gamma": 0}, "risk aversion")):
+        with pytest.raises(data.DataError, match=msg):
+            app.optimize({**base, **bad})

@@ -9,6 +9,10 @@
                               the latest day's move
     POST /api/stress       {holdings, value, source, shocks: [{ticker, shock}], horizon_days, confidence,
                             reverse_loss, refresh} -> historical scenarios, hypothetical shock, reverse stress test
+    POST /api/optimize     {holdings, source, years, method, min_weight, max_weight, gamma}
+                           -> suggested weights and current vs suggested volatility, VaR and risk shares (Phase 21)
+
+Weights are relative and scaled to sum to 100%; negative weights are short positions (Phase 21).
 
 Binds to 127.0.0.1 by default: this is a local tool, not a public service. Analyses run one at a time (the C++
 engine already uses every core).
@@ -25,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 
 from qre.web import analytics, data, runner
+from qre.web import optimize as optimize_app
 from qre.web import stress as stress_app
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -39,6 +44,7 @@ EXAMPLES = [
      "holdings": [{"ticker": t, "weight": 1} for t in ("PG", "KO", "PEP", "WMT", "JNJ")]},
     {"name": "All-in on one stock", "source": "yahoo", "holdings": [{"ticker": "TSLA", "weight": 1}]},
 ]
+MAX_GROSS = 5.0                    # longs plus shorts, as a multiple of capital
 MODEL_SETS = {"all": runner.ALL_MODELS, "fast": runner.FAST_MODELS}
 
 
@@ -84,10 +90,14 @@ class App:
             raw_w = [float(h.get("weight", 0)) for h in holdings if str(h.get("ticker", "")).strip()]
         except (TypeError, ValueError):
             raise data.DataError("weights must be numbers") from None
-        if any(not math.isfinite(x) or x < 0 for x in raw_w) or sum(raw_w) <= 0:
-            raise data.DataError("weights must be non-negative and not all zero (long-only portfolios)")
+        if any(not math.isfinite(x) for x in raw_w) or sum(raw_w) <= 0:
+            raise data.DataError("weights must be numbers with a positive sum (negative weights are short positions)")
         total = sum(raw_w)
-        return tickers, [x / total for x in raw_w]
+        w = [x / total for x in raw_w]
+        if sum(abs(x) for x in w) > MAX_GROSS:
+            raise data.DataError(f"gross exposure (longs plus shorts) is {sum(abs(x) for x in w):.0%} of capital; "
+                                 f"the limit is {MAX_GROSS:.0%}")
+        return tickers, w
 
     @staticmethod
     def _value(req):
@@ -165,6 +175,40 @@ class App:
             "timing_s": {"data": t1 - t0, "engine": t2 - t1, "analytics": t3 - t2},
         })
 
+
+    def optimize(self, req):
+        tickers, weights = self._holdings(req)
+        years = int(req.get("years", 3))
+        if not 2 <= years <= 15:
+            raise data.DataError("history must be between 2 and 15 years")
+        source = req.get("source", "yahoo")
+        if source not in self.fetchers:
+            raise data.DataError(f"unknown data source '{source}'")
+        try:
+            min_w = float(req.get("min_weight", 0.0))
+            max_w = float(req.get("max_weight", 1.0))
+            gamma = float(req.get("gamma", 5.0))
+        except (TypeError, ValueError):
+            raise data.DataError("weight limits and risk aversion must be numbers") from None
+        if not gamma > 0:
+            raise data.DataError("risk aversion must be positive")
+        start, end = req.get("start"), req.get("end")
+        if not (start and end):
+            today = data.bundled_last_date() if source == "bundled" else self.clock().date()
+            start, end = data.date_range(years, today)
+        dates, ticks, prices, cached = self.cache.get(source, tickers, start, end, self.fetchers[source])
+        if list(ticks) != tickers:
+            raise data.DataError("data source returned different tickers than requested")
+        dates, prices, notes = data.prepare(dates, tickers, prices, min_rows=120)
+        p = np.asarray(prices, dtype=float)
+        rets = p[1:] / p[:-1] - 1.0
+        try:
+            out = optimize_app.suggest(rets, weights, req.get("method", "min_variance"), min_w, max_w, gamma)
+        except ValueError as e:
+            raise data.DataError(str(e)) from None
+        out["tickers"] = tickers
+        out["data"] = {"start": dates[0], "end": dates[-1], "notes": notes, "cached": cached}
+        return _clean_json(out)
 
     def stress(self, req):
         tickers, weights = self._holdings(req)
@@ -250,7 +294,7 @@ def make_handler(app):
                 self._send(200, fh.read(), mimetypes.guess_type(full)[0] or "application/octet-stream")
 
         def do_POST(self):
-            routes = {"/api/analyze": app.analyze, "/api/stress": app.stress}
+            routes = {"/api/analyze": app.analyze, "/api/stress": app.stress, "/api/optimize": app.optimize}
             if self.path not in routes:
                 return self._send(404, {"error": "not found"})
             try:
